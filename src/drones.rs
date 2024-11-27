@@ -44,8 +44,12 @@ impl Drone for KrustyCrapDrone {
                     }
                 },
                 recv(self.sim_contr_recv) -> command_res => {
-                    if let Ok(_command) = command_res {
-                            todo!();
+                    if let Ok(command) = command_res {
+                        match command {
+                            Command::AddChannel(id, sender) => self.add_channel(id, sender)
+                            Command::RemoveChannel(_) => {}
+                            Command::Crash => {}
+                        }
                     }
                 }
             }
