@@ -53,9 +53,9 @@ impl NetworkInit {
 
 
             //Looping through Groups and creating/activating drones
-            let whichGroup = GROUPS.get(i).copied().unwrap();
+            let which_group = GROUPS.get(i).copied().unwrap();
             thread::spawn(move || {
-                let mut drone = match whichGroup{
+                let mut drone = match which_group{
                     "Group1" => KrustyCrapDrone::new(
                             DroneOptions{
                                 id: drone_config.id,
