@@ -1,12 +1,11 @@
-use crossbeam_channel::{select, Receiver, Sender};
+use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::{HashMap, HashSet};
-use std::fmt::Debug;
 use wg_2024::controller::Command;
 use wg_2024::drone::{Drone, DroneOptions};
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{Ack, FloodRequest, FloodResponse, Fragment, Nack, NodeType, Packet, PacketType};
 
-struct KrustyCrapDrone {
+pub struct KrustyCrapDrone {
     id: NodeId,
     sim_contr_send: Sender<Command>,
     sim_contr_recv: Receiver<Command>,
@@ -35,7 +34,7 @@ impl Drone for KrustyCrapDrone {
                 recv(self.sim_contr_recv) -> command_res => {
                     if let Ok(command) = command_res {
                         match command {
-                            Command::AddChannel(id, sender) => self.add_channel(id, sender)
+                            Command::AddChannel(id, sender) => self.add_channel(id, sender),
                             Command::RemoveChannel(_) => {}
                             Command::Crash => {}
                         }
@@ -96,7 +95,10 @@ impl KrustyCrapDrone {
                                 path_trace: new_path_trace.clone(),
                                 ..flood_request
                             }),
-                        routing_header: Default::default(), // isn't important since it's FloodRequest
+                        routing_header: SourceRoutingHeader {   // isn't important since it's FloodRequest
+                            hop_index: 0,
+                            hops: vec![],
+                        },
                         session_id,
                     };
                     if let Err(e) = sender.send(packet) {
