@@ -31,7 +31,16 @@ impl Drone for KrustyCrapDrone {
 
     fn run(&mut self) {
         loop {
-            select! {
+            select_biased! {
+                recv(self.sim_contr_recv) -> command_res => {
+                    if let Ok(command) = command_res {
+                        match command {
+                            Command::AddChannel(id, sender) => self.add_channel(id, sender)
+                            Command::RemoveChannel(_) => {}
+                            Command::Crash => {}
+                        }
+                    }
+                },
                 recv(self.packet_recv) -> packet_res => {
                     if let Ok(packet) = packet_res {
                         match packet.pack_type {
@@ -43,15 +52,6 @@ impl Drone for KrustyCrapDrone {
                         }
                     }
                 },
-                recv(self.sim_contr_recv) -> command_res => {
-                    if let Ok(command) = command_res {
-                        match command {
-                            Command::AddChannel(id, sender) => self.add_channel(id, sender)
-                            Command::RemoveChannel(_) => {}
-                            Command::Crash => {}
-                        }
-                    }
-                }
             }
         }
     }
