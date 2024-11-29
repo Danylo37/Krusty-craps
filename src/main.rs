@@ -1,5 +1,7 @@
 mod drones;
 mod network_initializer;
+mod server;
+mod clients;
 
 use crate::network_initializer::NetworkInit;
 
