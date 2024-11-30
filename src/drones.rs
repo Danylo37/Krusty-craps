@@ -1,14 +1,14 @@
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::{HashMap, HashSet};
-use wg_2024::controller::Command;
+use wg_2024::controller::{DroneCommand, NodeEvent};
 use wg_2024::drone::{Drone, DroneOptions};
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{Ack, FloodRequest, FloodResponse, Fragment, Nack, NodeType, Packet, PacketType};
 
 pub struct KrustyCrapDrone {
     id: NodeId,
-    sim_contr_send: Sender<Command>,
-    sim_contr_recv: Receiver<Command>,
+    controller_send: Sender<NodeEvent>,
+    controller_recv: Receiver<DroneCommand>,
     packet_recv: Receiver<Packet>,
     pdr: f32,
     packet_send: HashMap<NodeId, Sender<Packet>>,
@@ -19,11 +19,11 @@ impl Drone for KrustyCrapDrone {
     fn new(options: DroneOptions) -> Self {
         Self {
             id: options.id,
-            sim_contr_send: options.sim_contr_send,
-            sim_contr_recv: options.sim_contr_recv,
+            controller_send: options.controller_send,
+            controller_recv: options.controller_recv,
             packet_recv: options.packet_recv,
             pdr: options.pdr,
-            packet_send: options.packet_send,
+            packet_send: HashMap::new(),
             flood_ids: HashSet::new(),
         }
     }
@@ -31,27 +31,18 @@ impl Drone for KrustyCrapDrone {
     fn run(&mut self) {
         loop {
             select_biased! {
-                recv(self.sim_contr_recv) -> command_res => {
-                    if let Ok(command) = command_res {
-                        match command {
-                            Command::AddChannel(id, sender) => self.add_channel(id, sender),
-                            Command::RemoveChannel(id) => self.remove_channel(id),
-                            Command::Crash => {
-                                self.crash();
-                                break
-                            },
+                recv(self.controller_recv) -> command => {
+                    if let Ok(command) = command {
+                        if let DroneCommand::Crash = command {
+                            println!("drone {} crashed", self.id);
+                            break;
                         }
+                        self.handle_command(command);
                     }
-                },
-                recv(self.packet_recv) -> packet_res => {
-                    if let Ok(packet) = packet_res {
-                        match packet.pack_type {
-                            PacketType::Nack(nack) => self.handle_nack(nack),
-                            PacketType::Ack(ack) => self.handle_ack(ack),
-                            PacketType::MsgFragment(fragment) => self.handle_fragment(fragment),
-                            PacketType::FloodRequest(flood_request) => self.handle_flood_request(flood_request, packet.session_id),
-                            PacketType::FloodResponse(flood_response) => self.handle_flood_response(flood_response, packet.routing_header, packet.session_id),
-                        }
+                }
+                recv(self.packet_recv) -> packet => {
+                    if let Ok(packet) = packet {
+                        self.handle_packet(packet);
                     }
                 },
             }
@@ -60,16 +51,25 @@ impl Drone for KrustyCrapDrone {
 }
 
 impl KrustyCrapDrone {
+    fn handle_packet(&mut self, packet: Packet) {
+        match packet.pack_type {
+            PacketType::Nack(nack) => self.handle_nack(nack),
+            PacketType::Ack(ack) => self.handle_ack(ack),
+            PacketType::MsgFragment(fragment) => self.handle_fragment(fragment),
+            PacketType::FloodRequest(flood_request) => self.handle_flood_request(flood_request, packet.session_id),
+            PacketType::FloodResponse(flood_response) => self.handle_flood_response(flood_response, packet.routing_header, packet.session_id),
+        }
+    }
+    fn handle_command(&mut self, command: DroneCommand) {
+        match command {
+            DroneCommand::AddSender(id, sender) => self.add_channel(id, sender),
+            DroneCommand::SetPacketDropRate(pdr) => self.pdr = pdr,
+            DroneCommand::Crash => unreachable!(),
+        }
+    }
+
     fn add_channel(&mut self, id: NodeId, sender: Sender<Packet>) {
         self.packet_send.insert(id, sender);
-    }
-
-    fn remove_channel(&mut self, id: NodeId) {
-        self.packet_send.remove(&id);
-    }
-
-    fn crash(&mut self) {
-        todo!()     // optional i guess
     }
 
     fn handle_nack(&mut self, _nack: Nack) {
