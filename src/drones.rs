@@ -173,7 +173,6 @@ impl KrustyCrapDrone {
         }
     }
 
-
     fn get_sender_of(&self, prev_node_id: NodeId) -> Option<&Sender<Packet>> {
         self.packet_send.get(&prev_node_id)
     }
@@ -207,7 +206,6 @@ impl KrustyCrapDrone {
             }
         }
     }
-
 
     fn handle_flood_response(
         &mut self,
