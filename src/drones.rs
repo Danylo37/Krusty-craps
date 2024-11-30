@@ -71,7 +71,7 @@ impl KrustyCrapDrone {
     }
 
     fn handle_flood_request(&mut self, flood_request: FloodRequest, session_id: u64) {
-        let mut new_path_trace = flood_request.path_trace;
+        let mut new_path_trace = flood_request.path_trace.clone();
         new_path_trace.push((self.id, NodeType::Drone));
 
         // flood ID has already been received
@@ -87,72 +87,78 @@ impl KrustyCrapDrone {
             let neighbors = self.get_neighbors_except(sender_id);
 
             if !neighbors.is_empty() {
-                // forwarding the FloodRequest to all neighbors except the sender
-                for sender in neighbors {
-                    let packet = Packet {
-                        pack_type: PacketType::FloodRequest(
-                            FloodRequest {
-                                path_trace: new_path_trace.clone(),
-                                ..flood_request
-                            }),
-                        routing_header: SourceRoutingHeader {   // isn't important since it's FloodRequest
-                            hop_index: 0,
-                            hops: vec![],
-                        },
-                        session_id,
-                    };
-                    if let Err(e) = sender.send(packet) {
-                        eprintln!("Failed to send packet: {:?}", e);
-                    }
-                }
+                self.forward_flood_request(neighbors, flood_request, new_path_trace, session_id);
             } else {
-                // sending a FloodResponse back to the sender
                 self.send_flood_response(new_path_trace, flood_request.flood_id, session_id);
             }
+        } else {
+            eprintln!("Could not determine previous node for FloodRequest");
         }
     }
 
-    fn send_flood_response(&self, path_trace: Vec<(NodeId, NodeType)>, flood_id: u64, session_id: u64) {
-        if let Some (prev_node_id) = self.get_prev_node_id(&path_trace) {
-            if let Some(sender) = self.get_sender_of(prev_node_id) {
+    fn send_flood_response(
+        &self,
+        path_trace: Vec<(NodeId, NodeType)>,
+        flood_id: u64,
+        session_id: u64
+    ) {
+        // Getting the previous node from path_trace
+        let Some(prev_node_id) = self.get_prev_node_id(&path_trace) else {
+            eprintln!("No previous node found in path_trace for flood_id {}", flood_id);
+            return;
+        };
 
-                let reversed_path = path_trace
-                    .iter()
-                    .map(|(node_id, _)| *node_id)
-                    .rev()
-                    .collect();
+        // Getting the send channel for the previous node
+        let Some(sender) = self.get_sender_of(prev_node_id) else {
+            eprintln!("No sender found for node_id {}", prev_node_id);
+            return;
+        };
 
-                let packet = Packet {
-                    pack_type: PacketType::FloodResponse(
-                        FloodResponse {
-                            flood_id,
-                            path_trace,
-                        }),
-                    routing_header: SourceRoutingHeader {
-                        hop_index: 1,
-                        hops: reversed_path,
-                    },
-                    session_id,
-                };
+        let reversed_path = path_trace
+            .iter()
+            .map(|(node_id, _)| *node_id)
+            .rev()
+            .collect();
 
-                if let Err(e) = sender.send(packet) {
-                    eprintln!("Failed to send packet: {:?}", e);
-                }
-            }
+        let packet = Packet {
+            pack_type: PacketType::FloodResponse(
+                FloodResponse {
+                    flood_id,
+                    path_trace,
+                }),
+            routing_header: SourceRoutingHeader {
+                hop_index: 1,
+                hops: reversed_path,
+            },
+            session_id,
+        };
+
+        if let Err(e) = sender.send(packet) {
+            eprintln!("Failed to send packet: {:?}", e);
         }
-
     }
 
     fn get_prev_node_id(&self, path_trace: &[(NodeId, NodeType)]) -> Option<NodeId> {
-        let last = path_trace.last().unwrap();
-
-        if last.0 != self.id {
-            Some(last.0)
-        } else {
-            let second_last = &path_trace[path_trace.len() - 2];
-            Some(second_last.0)
+        match path_trace.len() {
+            0 => {
+                eprintln!("Path trace is empty!");
+                None
+            }
+            1 => {
+                eprintln!("Path trace has only one node, assuming no previous node.");
+                None
+            }
+            _ => {
+                let last = path_trace.last().unwrap();
+                if last.0 != self.id {
+                    Some(last.0)
+                } else {
+                    Some(path_trace[path_trace.len() - 2].0)
+                }
+            }
         }
     }
+
 
     fn get_sender_of(&self, prev_node_id: NodeId) -> Option<&Sender<Packet>> {
         self.packet_send.get(&prev_node_id)
@@ -165,6 +171,29 @@ impl KrustyCrapDrone {
             .map(|(_, sender)| sender)
             .collect()
     }
+
+    fn forward_flood_request(
+        &self,
+        neighbors: Vec<&Sender<Packet>>,
+        flood_request: FloodRequest,
+        new_path_trace: Vec<(NodeId, NodeType)>,
+        session_id: u64,
+    ) {
+        for sender in neighbors {
+            let packet = Packet {
+                pack_type: PacketType::FloodRequest(FloodRequest {
+                    path_trace: new_path_trace.clone(),
+                    ..flood_request
+                }),
+                routing_header: SourceRoutingHeader { hop_index: 0, hops: vec![] },
+                session_id,
+            };
+            if let Err(e) = sender.send(packet) {
+                eprintln!("Failed to forward FloodRequest: {:?}", e);
+            }
+        }
+    }
+
 
     fn handle_flood_response(
         &mut self,
