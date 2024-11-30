@@ -35,8 +35,11 @@ impl Drone for KrustyCrapDrone {
                     if let Ok(command) = command_res {
                         match command {
                             Command::AddChannel(id, sender) => self.add_channel(id, sender),
-                            Command::RemoveChannel(_) => {},
-                            Command::Crash => {},
+                            Command::RemoveChannel(id) => self.remove_channel(id),
+                            Command::Crash => {
+                                self.crash();
+                                break
+                            },
                         }
                     }
                 },
@@ -57,6 +60,17 @@ impl Drone for KrustyCrapDrone {
 }
 
 impl KrustyCrapDrone {
+    fn add_channel(&mut self, id: NodeId, sender: Sender<Packet>) {
+        self.packet_send.insert(id, sender);
+    }
+
+    fn remove_channel(&mut self, id: NodeId) {
+        self.packet_send.remove(&id);
+    }
+
+    fn crash(&mut self) {
+        todo!()     // optional i guess
+    }
 
     fn handle_nack(&mut self, _nack: Nack) {
         todo!()
@@ -227,10 +241,5 @@ impl KrustyCrapDrone {
         if let Err(e) = sender.send(packet) {
             eprintln!("Failed to send FloodResponse packet: {:?}", e);
         }
-    }
-
-
-    fn add_channel(&mut self, id: NodeId, sender: Sender<Packet>) {
-        self.packet_send.insert(id, sender);
     }
 }
