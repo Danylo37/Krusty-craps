@@ -47,7 +47,7 @@ impl Drone for KrustyCrapDrone {
                             PacketType::Ack(ack) => self.handle_ack(ack),
                             PacketType::MsgFragment(fragment) => self.handle_fragment(fragment),
                             PacketType::FloodRequest(flood_request) => self.handle_flood_request(flood_request, packet.session_id),
-                            PacketType::FloodResponse(flood_response) => self.handle_flood_response(flood_response, packet.session_id),
+                            PacketType::FloodResponse(flood_response) => self.handle_flood_response(flood_response, packet.routing_header, packet.session_id),
                         }
                     }
                 },
@@ -71,22 +71,22 @@ impl KrustyCrapDrone {
     }
 
     fn handle_flood_request(&mut self, flood_request: FloodRequest, session_id: u64) {
+        let mut new_path_trace = flood_request.path_trace;
+        new_path_trace.push((self.id, NodeType::Drone));
+
         // flood ID has already been received
         if self.flood_ids.contains(&flood_request.flood_id) {
-            self.send_flood_response(flood_request.path_trace, flood_request.flood_id, session_id);
+            self.send_flood_response(new_path_trace, flood_request.flood_id, session_id);
             return;
         }
 
         // flood ID has not yet been received
         self.flood_ids.insert(flood_request.flood_id);
 
-        if let Some(sender_id) = self.get_prev_node_id(&flood_request.path_trace) {
+        if let Some(sender_id) = self.get_prev_node_id(&new_path_trace) {
             let neighbors = self.get_neighbors_except(sender_id);
 
             if !neighbors.is_empty() {
-                let mut new_path_trace = flood_request.path_trace.clone();
-                new_path_trace.push((self.id, NodeType::Drone));
-
                 // forwarding the FloodRequest to all neighbors except the sender
                 for sender in neighbors {
                     let packet = Packet {
@@ -107,19 +107,16 @@ impl KrustyCrapDrone {
                 }
             } else {
                 // sending a FloodResponse back to the sender
-                self.send_flood_response(flood_request.path_trace, flood_request.flood_id, session_id);
+                self.send_flood_response(new_path_trace, flood_request.flood_id, session_id);
             }
         }
     }
 
     fn send_flood_response(&self, path_trace: Vec<(NodeId, NodeType)>, flood_id: u64, session_id: u64) {
-        let mut new_path_trace = path_trace.clone();
-        new_path_trace.push((self.id, NodeType::Drone));
-
         if let Some (prev_node_id) = self.get_prev_node_id(&path_trace) {
             if let Some(sender) = self.get_sender_of(prev_node_id) {
 
-                let reversed_path = new_path_trace
+                let reversed_path = path_trace
                     .iter()
                     .map(|(node_id, _)| *node_id)
                     .rev()
@@ -129,7 +126,7 @@ impl KrustyCrapDrone {
                     pack_type: PacketType::FloodResponse(
                         FloodResponse {
                             flood_id,
-                            path_trace: new_path_trace,
+                            path_trace,
                         }),
                     routing_header: SourceRoutingHeader {
                         hop_index: 1,
@@ -147,7 +144,14 @@ impl KrustyCrapDrone {
     }
 
     fn get_prev_node_id(&self, path_trace: &[(NodeId, NodeType)]) -> Option<NodeId> {
-        path_trace.last().map(|(node_id, _)| *node_id)
+        let last = path_trace.last().unwrap();
+
+        if last.0 != self.id {
+            Some(last.0)
+        } else {
+            let second_last = &path_trace[path_trace.len() - 2];
+            Some(second_last.0)
+        }
     }
 
     fn get_sender_of(&self, prev_node_id: NodeId) -> Option<&Sender<Packet>> {
@@ -162,9 +166,40 @@ impl KrustyCrapDrone {
             .collect()
     }
 
-    fn handle_flood_response(&mut self, flood_response: FloodResponse, session_id: u64) {
-        self.send_flood_response(flood_response.path_trace, flood_response.flood_id, session_id);
+    fn handle_flood_response(
+        &mut self,
+        flood_response: FloodResponse,
+        mut routing_header: SourceRoutingHeader,
+        session_id: u64,
+    ) {
+        // Getting the previous node from path_trace
+        let Some(prev_node_id) = self.get_prev_node_id(&flood_response.path_trace) else {
+            eprintln!("No previous node found in path_trace for flood_id {}", flood_response.flood_id);
+            return;
+        };
+
+        // Getting the send channel for the previous node
+        let Some(sender) = self.get_sender_of(prev_node_id) else {
+            eprintln!("No sender found for node_id {}", prev_node_id);
+            return;
+        };
+
+        // Updating hop_index
+        routing_header.hop_index += 1;
+
+        // Creating a new FloodResponse package
+        let packet = Packet {
+            pack_type: PacketType::FloodResponse(flood_response),
+            routing_header,
+            session_id,
+        };
+
+        // Sending a package
+        if let Err(e) = sender.send(packet) {
+            eprintln!("Failed to send FloodResponse packet: {:?}", e);
+        }
     }
+
 
     fn add_channel(&mut self, id: NodeId, sender: Sender<Packet>) {
         self.packet_send.insert(id, sender);
