@@ -34,7 +34,7 @@ impl ClientDanylo {
                             PacketType::FloodRequest(flood_request) => self.handle_flood_request(flood_request),
                             PacketType::FloodResponse(flood_response) => self.handle_flood_response(flood_response),
                         }
-                    },
+                    }
                 }
             }
         }
