@@ -69,14 +69,19 @@ impl KrustyCrapDrone {
     }
     fn handle_command(&mut self, command: DroneCommand) {
         match command {
-            DroneCommand::AddSender(id, sender) => self.add_channel(id, sender),
+            DroneCommand::AddSender(id, sender) => self.add_sender(id, sender),
+            DroneCommand::RemoveSender(id) => self.remove_sender(id),
             DroneCommand::SetPacketDropRate(pdr) => self.pdr = pdr,
             DroneCommand::Crash => unreachable!(),
         }
     }
 
-    fn add_channel(&mut self, id: NodeId, sender: Sender<Packet>) {
+    fn add_sender(&mut self, id: NodeId, sender: Sender<Packet>) {
         self.packet_send.insert(id, sender);
+    }
+
+    fn remove_sender(&mut self, id: NodeId) {
+        self.packet_send.remove(&id);
     }
 
     fn handle_nack(&mut self, _nack: Nack) {
