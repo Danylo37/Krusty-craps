@@ -1,7 +1,7 @@
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use wg_2024::controller::{DroneCommand, NodeEvent};
-use wg_2024::drone::{Drone, DroneOptions};
+use wg_2024::drone::Drone;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{Ack, FloodRequest, FloodResponse, Fragment, Nack, NodeType, Packet, PacketType};
 
@@ -16,14 +16,21 @@ pub struct KrustyCrapDrone {
 }
 
 impl Drone for KrustyCrapDrone {
-    fn new(options: DroneOptions) -> Self {
+    fn new(
+        id: NodeId,
+        controller_send: Sender<NodeEvent>,
+        controller_recv: Receiver<DroneCommand>,
+        packet_recv: Receiver<Packet>,
+        packet_send: HashMap<NodeId, Sender<Packet>>,
+        pdr: f32,
+    ) -> Self {
         Self {
-            id: options.id,
-            controller_send: options.controller_send,
-            controller_recv: options.controller_recv,
-            packet_recv: options.packet_recv,
-            pdr: options.pdr,
-            packet_send: HashMap::new(),
+            id,
+            controller_send,
+            controller_recv,
+            packet_recv,
+            packet_send,
+            pdr,
             flood_ids: HashSet::new(),
         }
     }
