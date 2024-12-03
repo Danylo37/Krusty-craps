@@ -60,9 +60,9 @@ impl Drone for KrustyCrapDrone {
 impl KrustyCrapDrone {
     fn handle_packet(&mut self, packet: Packet) {
         match packet.pack_type {
-            PacketType::Nack(nack) => self.handle_nack(nack),
-            PacketType::Ack(ack) => self.handle_ack(ack),
-            PacketType::MsgFragment(fragment) => self.handle_fragment(fragment),
+            PacketType::Nack(nack) => self.handle_nack(nack, packet.routing_header, packet.session_id),
+            PacketType::Ack(ack) => self.handle_ack(ack, packet.routing_header, packet.session_id),
+            PacketType::MsgFragment(fragment) => self.handle_fragment(fragment, packet.routing_header, packet.session_id),
             PacketType::FloodRequest(flood_request) => self.handle_flood_request(flood_request, packet.session_id),
             PacketType::FloodResponse(flood_response) => self.handle_flood_response(flood_response, packet.routing_header, packet.session_id),
         }
@@ -84,16 +84,103 @@ impl KrustyCrapDrone {
         self.packet_send.remove(&id);
     }
 
-    fn handle_nack(&mut self, _nack: Nack) {
-        todo!()
+    fn handle_nack(&mut self, nack: Nack, source_routing_header: SourceRoutingHeader, session_id: u64) {
+        let hop_idx = source_routing_header.hop_index;
+
+        let Some(next_hop_id) = source_routing_header.hops.get(hop_idx) else {
+            eprintln!(
+                "Routing error in handle_nack: hop_index {} exceeds hops length for session_id {}",
+                hop_idx, session_id
+            );
+            return;
+        };
+
+        let Some(sender) = self.get_sender_of(*next_hop_id) else {
+            eprintln!("No sender found for node_id {}", next_hop_id);
+            return;
+        };
+
+        let packet = Packet {
+            pack_type: PacketType::Nack(nack),
+            routing_header: SourceRoutingHeader {
+                hop_index: hop_idx + 1,
+                hops: source_routing_header.hops.clone()
+            },
+            session_id,
+        };
+
+        if let Err(e) = sender.send(packet) {
+            eprintln!(
+                "Failed to forward Nack for session_id {} to node_id {}: {:?}",
+                session_id, next_hop_id, e
+            );
+        }
     }
 
-    fn handle_ack(&mut self, _ack: Ack) {
-        todo!()
+    fn handle_ack(&mut self, ack: Ack, source_routing_header: SourceRoutingHeader, session_id: u64) {
+        let hop_idx = source_routing_header.hop_index;
+
+        let Some(next_hop_id) = source_routing_header.hops.get(hop_idx) else {
+            eprintln!(
+                "Routing error in handle_ack: hop_index {} exceeds hops length for session_id {}",
+                hop_idx, session_id
+            );
+            return;
+        };
+
+        let Some(sender) = self.get_sender_of(*next_hop_id) else {
+            eprintln!("No sender found for node_id {}", next_hop_id);
+            return;
+        };
+
+        let packet = Packet {
+            pack_type: PacketType::Ack(ack),
+            routing_header: SourceRoutingHeader {
+                hop_index: hop_idx + 1,
+                hops: source_routing_header.hops.clone()
+            },
+            session_id,
+        };
+
+        if let Err(e) = sender.send(packet) {
+            eprintln!(
+                "Failed to forward ACK for session_id {} to node_id {}: {:?}",
+                session_id, next_hop_id, e
+            );
+        }
     }
 
-    fn handle_fragment(&mut self, _fragment: Fragment) {
-        todo!()
+    fn handle_fragment(&mut self, fragment: Fragment, source_routing_header: SourceRoutingHeader, session_id: u64) {
+        let hop_idx = source_routing_header.hop_index;
+
+        let Some(next_hop_id) = source_routing_header.hops.get(hop_idx) else {
+            eprintln!(
+                "Routing error in handle_fragment: hop_index {} exceeds hops length for session_id {}",
+                hop_idx, session_id
+            );
+            return;
+        };
+
+        let Some(sender) = self.get_sender_of(*next_hop_id) else {
+            eprintln!("No sender found for node_id {}", next_hop_id);
+            return;
+        };
+
+        let packet = Packet {
+            pack_type: PacketType::MsgFragment(fragment),
+            routing_header: SourceRoutingHeader {
+                hop_index: hop_idx + 1,
+                hops: source_routing_header.hops.clone()
+            },
+            session_id,
+        };
+
+        if let Err(e) = sender.send(packet) {
+            eprintln!(
+                "Failed to forward Fragment for session_id {} to node_id {}: {:?}",
+                session_id, next_hop_id, e
+            );
+        }
     }
 
     fn handle_flood_request(&mut self, flood_request: FloodRequest, session_id: u64) {
