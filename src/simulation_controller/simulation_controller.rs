@@ -2,7 +2,7 @@ use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use std::collections::HashMap;
 use std::thread::sleep;
 use std::time::Duration;
-use wg_2024::controller::{DroneCommand, NodeEvent};
+use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::network::NodeId;
 use wg_2024::packet::{NodeType, Packet, PacketType};
 
@@ -26,7 +26,7 @@ pub struct PacketInfo {
 pub struct SimulationController {
     pub state: SimulationState,
     pub command_senders: HashMap<NodeId, Sender<DroneCommand>>,
-    pub event_receiver: Receiver<NodeEvent>,
+    pub event_receiver: Receiver<DroneEvent>,
 }
 
 
@@ -35,7 +35,7 @@ impl SimulationController {
         - It initializes a new SimulationController struct. The state is initialized with empty collections (nodes, topology, packet history).
        The command_senders map is also initialized as empty. Importantly, the event_receiver field is initialized with the event_receiver that's passed in as a parameter.
 */
-    pub fn new(event_receiver: Receiver<NodeEvent>) -> Self {
+    pub fn new(event_receiver: Receiver<DroneEvent>) -> Self {
         Self {
             state: SimulationState {
                 nodes: HashMap::new(),
@@ -71,7 +71,7 @@ impl SimulationController {
             match self.event_receiver.try_recv() {
                 Ok(event) => {
                     match event {  // No lock needed
-                        NodeEvent::PacketSent(packet) => {
+                        DroneEvent::PacketSent(packet) => {
                             self.state.packet_history.push(PacketInfo { // Access state directly
                                 source: self.get_source_from_packet(&packet),
                                 destination: self.get_destination_from_packet(&packet),
@@ -79,7 +79,7 @@ impl SimulationController {
                                 dropped: false,
                             });
                         }
-                        NodeEvent::PacketDropped(packet) => { // Same logic for PacketDropped
+                        DroneEvent::PacketDropped(packet) => { // Same logic for PacketDropped
                             self.state.packet_history.push(PacketInfo { // Access state directly
                                 source: self.get_source_from_packet(&packet),
                                 destination: self.get_destination_from_packet(&packet),
