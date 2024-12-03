@@ -85,12 +85,12 @@ impl KrustyCrapDrone {
     }
 
     fn handle_nack(&mut self, nack: Nack, source_routing_header: SourceRoutingHeader, session_id: u64) {
-        let hop_idx = source_routing_header.hop_index;
+        let next_hop_index = source_routing_header.hop_index + 1;
 
-        let Some(next_hop_id) = source_routing_header.hops.get(hop_idx) else {
+        let Some(next_hop_id) = source_routing_header.hops.get(next_hop_index) else {
             eprintln!(
                 "Routing error in handle_nack: hop_index {} exceeds hops length for session_id {}",
-                hop_idx, session_id
+                next_hop_index, session_id
             );
             return;
         };
@@ -103,7 +103,7 @@ impl KrustyCrapDrone {
         let packet = Packet {
             pack_type: PacketType::Nack(nack),
             routing_header: SourceRoutingHeader {
-                hop_index: hop_idx + 1,
+                hop_index: next_hop_index,
                 hops: source_routing_header.hops.clone()
             },
             session_id,
