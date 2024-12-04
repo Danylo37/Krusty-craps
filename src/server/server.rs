@@ -1,45 +1,67 @@
 //Server file, idk what i am doing (maybe a bit now)
 
+use std::collections::HashMap;
 use crossbeam_channel::{select, select_biased, Receiver, Sender};
-
 use std::fmt::Debug;
-use wg_2024::controller::Command;
-use wg_2024::drone::{Drone, DroneOptions};
-use wg_2024::network::NodeId;
-use wg_2024::packet::{Ack, FloodRequest, FloodResponse, Fragment, Nack, NackType, NodeType, Packet, PacketType, ServerType};
+
+use wg_2024::{
+    network::NodeId,
+    drone::Drone,
+    packet::{Ack, FloodRequest, FloodResponse, Fragment, Nack, NackType, NodeType, Packet, PacketType},
+};
+use wg_2024::controller::DroneCommand;
+use wg_2024::network::SourceRoutingHeader;
+use crate::general::{ServerCommand, ServerEvent};
 
 #[derive(Debug)]
 pub struct Server{
-    pub server_id: Node,
-    pub connected_drone_ids: Vec<NodeId>,
-    pub path_trace: Vec<(NodeId, NodeType)>,
-    pub server_type: ServerType,
-    //pub controller_send: Sender<NodeEvent>,
-    //pub controller_recv: Receiver<DroneCommand>,
+    pub id: NodeId,
+    pub controller_send: Sender<ServerEvent>,
+    pub controller_recv: Receiver<ServerCommand>,
     pub packet_recv: Receiver<Packet>,
     pub packet_send: HashMap<NodeId, Sender<Packet>>,
 }
 
+pub trait CommunicationServer{
+
+}
+pub trait ContentServer{
+
+}
 
 impl Server{
-    pub fn new(server_id: Node, connected_drone_ids: Vec<NodeId>, server_type: ServerType) -> Self{
+    pub fn new(
+            id: NodeId,
+            connected_drone_ids: Vec<NodeId>,
+            controller_send: Sender<ServerEvent>,
+            controller_recv: Receiver<ServerCommand>,
+            packet_recv: Receiver<Packet>,
+            packet_send: HashMap<NodeId, Sender<Packet>>
+    ) -> Self{
         Server{
-            server_id,
-            connected_drone_ids,
-            path_trace: Vec::new(),
-            server_type,
-            packet_recv: crossbeam_channel::unbounded(),
+            id,
+            controller_send,
+            controller_recv,
+            packet_recv,
             packet_send: HashMap::new(),
         }
     }
     fn run(&mut self) {
         loop {
             select_biased! {
-                /*recv(self.sim_contr_recv) -> command_res => {
+                recv(self.controller_recv) -> command_res => {
                     if let Ok(command) = command_res {
-                        match command {}
+                        match command {
+                            ServerCommand::AddSender(id, sender) => {
+                                self.packet_send.insert(id, sender);
+
+                            }
+                            ServerCommand::RemoveSender(id) => {
+                                self.packet_send.remove(&id);
+                            }
+                        }
                     }
-                },*/
+                },
                 recv(self.packet_recv) -> packet_res => {
                     if let Ok(packet) = packet_res {
                         match packet.pack_type {
@@ -57,10 +79,32 @@ impl Server{
     pub fn discovery(&self){
         let flood_request = FloodRequest{
             flood_id: 1,
-            initiator_id: self.server_id,
+            initiator_id: self.id,
             path_trace: Vec::new(),
         };
     }
+
+
+    //Handling messages?
+    fn create_message(pack_type: PacketType, route: Vec<NodeId>, session_id: u64 )->Packet{
+        Packet{
+            pack_type,
+            routing_header: Self::create_source_routing(route),
+            session_id,
+        }
+    }
+    fn create_source_routing(route: Vec<NodeId>) -> SourceRoutingHeader{
+        SourceRoutingHeader {
+            hop_index: 1,
+            hops: route,
+        }
+    }
+
+    fn reassemble_fragment(){
+
+    }
+
+
     fn handle_nack(&mut self, nack: Nack) {
 
     }
@@ -72,76 +116,4 @@ impl Server{
     fn handle_fragment(&mut self, fragment: Fragment, session_id: u64) {
 
     }
-
-    /*fn handle_flood_request(&mut self, flood_request: FloodRequest, session_id: u64) {
-        // flood ID has already been received
-        if self.flood_ids.contains(&flood_request.flood_id) {
-            self.send_flood_response(flood_request.path_trace, flood_request.flood_id, session_id);
-            return;
-        }
-
-        // flood ID has not yet been received
-        self.flood_ids.insert(flood_request.flood_id);
-
-        if let Some(sender_id) = self.get_prev_node_id(&flood_request.path_trace) {
-            let neighbors = self.get_neighbors_except(sender_id);
-
-            if !neighbors.is_empty() {
-                let mut new_path_trace = flood_request.path_trace.clone();
-                new_path_trace.push((self.id, NodeType::Drone));
-
-                // forwarding the FloodRequest to all neighbors except the sender
-                for sender in neighbors {
-                    let packet = Packet {
-                        pack_type: PacketType::FloodRequest(
-                            FloodRequest {
-                                path_trace: new_path_trace.clone(),
-                                ..flood_request
-                            }),
-                        routing_header: Default::default(), // isn't important since it's FloodRequest
-                        session_id,
-                    };
-                    if let Err(e) = sender.send(packet) {
-                        eprintln!("Failed to send packet: {:?}", e);
-                    }
-                }
-            } else {
-                // sending a FloodResponse back to the sender
-                self.send_flood_response(flood_request.path_trace, flood_request.flood_id, session_id);
-            }
-        }
-    }
-    fn send_flood_response(&self, path_trace: Vec<(NodeId, NodeType)>, flood_id: u64, session_id: u64) {
-        let mut new_path_trace = path_trace.clone();
-        new_path_trace.push((self.id, NodeType::Drone));
-
-        if let Some (prev_node_id) = self.get_prev_node_id(&path_trace) {
-            if let Some(sender) = self.get_sender_of(prev_node_id) {
-
-                let reversed_path = new_path_trace
-                    .iter()
-                    .map(|(node_id, _)| *node_id)
-                    .rev()
-                    .collect();
-
-                let packet = Packet {
-                    pack_type: PacketType::FloodResponse(
-                        FloodResponse {
-                            flood_id,
-                            path_trace: new_path_trace,
-                        }),
-                    routing_header: SourceRoutingHeader {
-                        hop_index: 1,
-                        hops: reversed_path,
-                    },
-                    session_id,
-                };
-
-                if let Err(e) = sender.send(packet) {
-                    eprintln!("Failed to send packet: {:?}", e);
-                }
-            }
-        }
-
-    }*/
 }
