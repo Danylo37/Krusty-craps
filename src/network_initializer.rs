@@ -62,8 +62,8 @@ impl NetworkInit {
 
             //Creating receiver for Drone
             let (_, _packet_receiver) = unbounded();
-            //Looping through Groups and creating/activating drones
-            let which_group = groups.get(0).copied().unwrap();
+
+            //Creating Drone
             thread::spawn(move || {
                 let mut drone = SimulationController::create_drone(
                     drone_id, event_sender,
