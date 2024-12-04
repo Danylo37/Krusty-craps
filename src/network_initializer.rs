@@ -13,7 +13,7 @@ use wg_2024::{
 use crate::drones::KrustyCrapDrone;
 use crate::server::*;
 use crate::clients::*;
-use crate::general::ServerCommand;
+use crate::general_use::ServerCommand;
 
 pub struct NetworkInit {
     node_channels: HashMap<NodeId, (Sender<ServerCommand>, Receiver<ServerCommand>)>, //Maybe a struct doesn't make that much sense
