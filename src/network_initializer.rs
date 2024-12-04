@@ -5,8 +5,8 @@ use crossbeam_channel::*;
 use wg_2024::{
     packet::Packet,
     config::{Client, Config, Drone, Server},
-    controller::Command,
-    drone::{Drone as DroneTrait, DroneOptions},
+    controller::{DroneCommand, DroneEvent},
+    drone::{Drone as DroneTrait},
     network::NodeId,
 };
 
@@ -16,7 +16,7 @@ use crate::clients::*;
 use crate::general::ServerCommand;
 
 pub struct NetworkInit {
-    node_channels: HashMap<NodeId, (Sender<Command>, Receiver<Command>)>, //Maybe a struct doesn't make that much sense
+    node_channels: HashMap<NodeId, (Sender<ServerCommand>, Receiver<ServerCommand>)>, //Maybe a struct doesn't make that much sense
 }
 
 impl NetworkInit {
