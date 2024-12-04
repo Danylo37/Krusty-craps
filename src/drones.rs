@@ -87,9 +87,11 @@ impl KrustyCrapDrone {
     }
 
     fn handle_nack(&mut self, nack: Nack, source_routing_header: SourceRoutingHeader, session_id: u64) {
-        let next_hop_index = source_routing_header.hop_index + 1;
+        let hop_index = source_routing_header.hop_index;
+        let hops = source_routing_header.hops;
+        let next_hop_index = hop_index + 1;
 
-        let Some(next_hop_id) = source_routing_header.hops.get(next_hop_index) else {
+        let Some(next_hop_id) = hops.get(next_hop_index) else {
             eprintln!(
                 "Routing error in handle_nack: hop_index {} exceeds hops length for session_id {}",
                 next_hop_index, session_id
@@ -106,7 +108,7 @@ impl KrustyCrapDrone {
             pack_type: PacketType::Nack(nack),
             routing_header: SourceRoutingHeader {
                 hop_index: next_hop_index,
-                hops: source_routing_header.hops.clone()
+                hops: hops.clone()
             },
             session_id,
         };
@@ -120,12 +122,15 @@ impl KrustyCrapDrone {
     }
 
     fn handle_ack(&mut self, ack: Ack, source_routing_header: SourceRoutingHeader, session_id: u64) {
-        let hop_idx = source_routing_header.hop_index;
+        let hop_index = source_routing_header.hop_index;
+        let hops = source_routing_header.hops;
+        let next_hop_index = hop_index + 1;
 
-        let Some(next_hop_id) = source_routing_header.hops.get(hop_idx) else {
+
+        let Some(next_hop_id) = hops.get(next_hop_index) else {
             eprintln!(
                 "Routing error in handle_ack: hop_index {} exceeds hops length for session_id {}",
-                hop_idx, session_id
+                next_hop_index, session_id
             );
             return;
         };
@@ -138,8 +143,8 @@ impl KrustyCrapDrone {
         let packet = Packet {
             pack_type: PacketType::Ack(ack),
             routing_header: SourceRoutingHeader {
-                hop_index: hop_idx + 1,
-                hops: source_routing_header.hops.clone()
+                hop_index: next_hop_index,
+                hops: hops.clone()
             },
             session_id,
         };
@@ -153,26 +158,36 @@ impl KrustyCrapDrone {
     }
 
     fn handle_fragment(&mut self, fragment: Fragment, source_routing_header: SourceRoutingHeader, session_id: u64) {
-        let hop_idx = source_routing_header.hop_index;
+        if self.crashing_behavior {
+        // TODO: Send Nack (ErrorInRouting(self.id))
+            return;
+        }
 
-        let Some(next_hop_id) = source_routing_header.hops.get(hop_idx) else {
-            eprintln!(
-                "Routing error in handle_fragment: hop_index {} exceeds hops length for session_id {}",
-                hop_idx, session_id
-            );
+        let hop_index = source_routing_header.hop_index;
+        let hops = source_routing_header.hops;
+
+        if self.id != hops[hop_index] {
+            // TODO: Send Nack (UnexpectedRecipient)
+            return;
+        }
+
+        let next_hop_index = hop_index + 1;
+
+        let Some(next_hop_id) = hops.get(next_hop_index) else {
+            // TODO: Send Nack (DestinationIsDrone)
             return;
         };
 
         let Some(sender) = self.get_sender_of(*next_hop_id) else {
-            eprintln!("No sender found for node_id {}", next_hop_id);
+            // TODO: Send Nack (ErrorInRouting(next_hop_id))
             return;
         };
 
         let packet = Packet {
             pack_type: PacketType::MsgFragment(fragment),
             routing_header: SourceRoutingHeader {
-                hop_index: hop_idx + 1,
-                hops: source_routing_header.hops.clone()
+                hop_index: next_hop_index,
+                hops: hops.clone()
             },
             session_id,
         };
