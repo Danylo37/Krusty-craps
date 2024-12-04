@@ -8,7 +8,11 @@ pub enum ServerCommand {
     
 }
 
+///Server-Controller
+pub enum ServerEvent{
+}
 
 /// From controller to Client
 pub enum ClientCommand {
 }
+
