@@ -13,6 +13,7 @@ pub struct KrustyCrapDrone {
     pdr: f32,
     packet_send: HashMap<NodeId, Sender<Packet>>,
     flood_ids: HashSet<u64>,
+    crashing_behavior: bool,
 }
 
 impl Drone for KrustyCrapDrone {
@@ -32,6 +33,7 @@ impl Drone for KrustyCrapDrone {
             packet_send,
             pdr,
             flood_ids: HashSet::new(),
+            crashing_behavior: false,
         }
     }
 
@@ -40,10 +42,6 @@ impl Drone for KrustyCrapDrone {
             select_biased! {
                 recv(self.controller_recv) -> command => {
                     if let Ok(command) = command {
-                        if let DroneCommand::Crash = command {
-                            println!("drone {} crashed", self.id);
-                            break;
-                        }
                         self.handle_command(command);
                     }
                 }
@@ -52,6 +50,9 @@ impl Drone for KrustyCrapDrone {
                         self.handle_packet(packet);
                     }
                 },
+            }
+            if self.packet_recv.is_empty() {
+                break;
             }
         }
     }
@@ -67,12 +68,13 @@ impl KrustyCrapDrone {
             PacketType::FloodResponse(flood_response) => self.handle_flood_response(flood_response, packet.routing_header, packet.session_id),
         }
     }
+
     fn handle_command(&mut self, command: DroneCommand) {
         match command {
             DroneCommand::AddSender(id, sender) => self.add_sender(id, sender),
             DroneCommand::RemoveSender(id) => self.remove_sender(id),
             DroneCommand::SetPacketDropRate(pdr) => self.pdr = pdr,
-            DroneCommand::Crash => unreachable!(),
+            DroneCommand::Crash => self.crashing_behavior = true,
         }
     }
 
