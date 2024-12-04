@@ -1,11 +1,15 @@
 use crossbeam_channel::Sender;
-use wg_network::NodeId;
-use wg_packet::Packet;
+use wg_2024::{
+    packet::Packet,
+    network::NodeId,
+};
+
 
 /// From controller to Server
 #[derive(Debug, Clone)]
 pub enum ServerCommand {
-    
+    RemoveSender(NodeId),
+    AddSender(NodeId, Sender<Packet>)
 }
 
 ///Server-Controller
