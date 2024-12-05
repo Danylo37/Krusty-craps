@@ -8,12 +8,14 @@ use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::NodeId;
 use wg_2024::packet::{NodeType, Packet, PacketType};
-
+use crate::drones::KrustyCrapDrone;
+use crate::general_use::{ClientCommand, ServerCommand};
 
 pub struct SimulationState {
     pub nodes: HashMap<NodeId, NodeType>,
     pub topology: HashMap<NodeId, Vec<NodeId>>,
     pub packet_history: Vec<PacketInfo>,
+    available_drone_types: Vec<String>,  // Store available drone types
 }
 
 
@@ -28,24 +30,52 @@ pub struct PacketInfo {
 
 pub struct SimulationController {
     pub state: SimulationState,
-    pub command_senders: HashMap<NodeId, Sender<DroneCommand>>,
-    pub event_receiver: Receiver<DroneEvent>,
+    pub drone_command_sender: Sender<DroneCommand>,      // For sending commands TO drones
+    pub drone_event_receiver: Receiver<DroneEvent>,        // For receiving events FROM drones
+    pub client_command_sender: Sender<ClientCommand>,    // For sending commands TO clients
+    pub client_event_receiver: Receiver<ClientEvent>,      //  For receiving events FROM clients  (you'll need to define a ClientEvent enum)              TODO
+    pub server_command_sender: Sender<ServerCommand>,    // For sending commands TO servers
+    pub server_event_receiver: Receiver<ServerEvent>,      // For receiving events FROM server (you'll need to define a ServerEvent enum)               TODO
+
+
+    pub drones: HashMap<NodeId, Box<dyn Drone + Send>>,
+    pub packet_senders: HashMap<NodeId, Sender<Packet>>,
+
+
+    // You might want to store clients and servers here as well if you
+    // need to access them directly in the SimulationController
+    // pub clients: HashMap<NodeId, ...>,                                                                TODO
+    // pub servers: HashMap<NodeId, ...>,                                                                TODO
+
 }
 
 
 impl SimulationController {
-    ///  - Constructor for the SimulationController. It takes a Receiver<NodeEvent> as input, which is the channel through which the simulation controller will receive events from the nodes (drones, clients, servers) in simulation.
-    /// - It initializes a new SimulationController struct. The state is initialized with empty collections (nodes, topology, packet history).
-    /// The command_senders map is also initialized as empty. Importantly, the event_receiver field is initialized with the event_receiver that's passed in as a parameter.
-    pub fn new(event_receiver: Receiver<DroneEvent>) -> Self {
+    pub fn new(
+        drone_command_sender: Sender<DroneCommand>,
+        drone_event_receiver: Receiver<DroneEvent>,
+        client_command_sender: Sender<ClientCommand>,
+        client_event_receiver: Receiver<ClientEvent>, //ClientEvent needs to be defined                           TODO
+        server_command_sender: Sender<ServerCommand>,
+        server_event_receiver: Receiver<ServerEvent>, //ServerEvent needs to be defined                           TODO
+        available_drone_types: Vec<String>,
+
+    ) -> Self {
         Self {
             state: SimulationState {
                 nodes: HashMap::new(),
                 topology: HashMap::new(),
                 packet_history: Vec::new(),
+                available_drone_types, // Initialize available drone types
             },
-            command_senders: HashMap::new(),
-            event_receiver,
+            drone_command_sender,
+            drone_event_receiver,
+            client_command_sender,
+            client_event_receiver,
+            server_command_sender,
+            server_event_receiver,
+            drones: HashMap::new(),
+            packet_senders: HashMap::new(),
         }
     }
 
@@ -59,66 +89,92 @@ impl SimulationController {
         }
     }
 
-    /// Spawns a new drone on a separate thread.
-    pub fn spawn_drone<D: Drone + Send + 'static>(&mut self, drone_id: NodeId) {
-        let (event_sender, event_receiver) = unbounded();
-        let (command_sender, command_receiver) = unbounded();
-        let (packet_sender, packet_receiver) = unbounded();
-        let packet_send: HashMap<NodeId, Sender<Packet>> = HashMap::new();
-        let pdr = 0.1; // Initial PDR value
+    /// Registers a drone with the simulation controller.
+    pub fn register_drone(&mut self, node_id: NodeId, command_sender: Sender<DroneCommand>) {
+        self.command_senders_drones.insert(node_id, command_sender);
+    }
 
-        self.register_node(drone_id, command_sender); // Register the command sender *before* spawning the thread
+    pub fn register_server(&mut self, node_id: NodeId, command_sender: Sender<ServerCommand>) {
+        self.command_senders_servers.insert(node_id, command_sender);
+    }
 
-        thread::spawn(move || {
-            let mut drone = D::new(drone_id, event_sender, command_receiver, packet_receiver, packet_send, pdr);
+    pub fn register_client(&mut self, node_id: NodeId, command_sender: Sender<ClientCommand>) {
+        self.command_senders_clients.insert(node_id, command_sender);
+    }
 
-            drone.run();
+    /// Spawns a new drone.
+    pub fn create_drone(
+        &mut self,
+        drone_id: NodeId,
+        event_sender: Sender<DroneEvent>,
+        command_receiver: Receiver<DroneCommand>,
+        packet_receiver: Receiver<Packet>,
+        connected_nodes: Vec<NodeId>, // Provide connected nodes
+        pdr: f32,
+    ) {
+
+        let drone_type_name = self.state.available_drone_types.pop().unwrap_or_else(|| {
+            println!("No more specific drone types available. Using default.");
+            "default_drone".to_string() // Or however you handle defaults
         });
+
+        // Create packet senders for connected nodes:
+        let packet_senders: HashMap<NodeId, Sender<Packet>> = connected_nodes
+            .into_iter()
+            .filter_map(|id| {
+                self.packet_senders.get(&id).cloned().map(|sender| (id, sender))
+            })
+            .collect();
+
+
+        let drone: Box<dyn Drone + Send> = match drone_type_name.as_str() {  // Correct as_str() usage
+            "KrustyCrapDrone" => Box::new(KrustyCrapDrone::new(drone_id, event_sender, command_receiver, packet_receiver, packet_senders, pdr)), // Correct drone creation
+            // Add other drone types here
+            _ => Box::new(KrustyCrapDrone::new(drone_id, event_sender, command_receiver, packet_receiver, packet_senders, pdr)), // Default drone type                               TODO
+        };
+
+        self.drones.insert(drone_id, drone); // Store the drone
     }
 
-    /// This function registers a node with the simulation controller.
-   /// It adds the node's command sender to the command_senders map, allowing the controller to send commands to that node.
-    pub fn register_node(&mut self, node_id: NodeId, command_sender: Sender<DroneCommand>) {
-        self.command_senders.insert(node_id, command_sender);
-    }
 
         /// Processes incoming events from drones.
     /// This function handles `PacketSent`, `PacketDropped`, and `ControllerShortcut` events.
-        fn process_events(&mut self) {
+        fn process_packet_sent_events(&mut self) {
             loop {
-                select_biased! {
-                recv(self.event_receiver) -> event => match event {
-                    Ok(event) => match event {
-                        DroneEvent::PacketSent(packet) => self.handle_packet_sent(packet),
-                        DroneEvent::PacketDropped(packet) => self.handle_packet_dropped(packet),
-                        DroneEvent::ControllerShortcut(packet) => {
-                            match packet.pack_type {
-                                PacketType::Ack(_) | PacketType::Nack(_) | PacketType::FloodResponse(_) => {
-                                    if let Some(destination) = self.get_destination_from_packet(&packet) {
-                                        if let Some(command_sender) = self.command_senders.get(&destination) {
-                                            let command = DroneCommand::ControllerShortcut(packet);
-
-                                            if let Err(e) = command_sender.send(command) {
-                                                eprintln!("Failed to send controller shortcut: {:?}", e);
-                                            }
-                                        } else {
-                                            eprintln!("No command sender found for destination: {:?}", destination);
-                                        }
-                                    } else {
-                                        eprintln!("Could not determine destination for ControllerShortcut");
-                                    }
-                                }
-                                _ => eprintln!("Unexpected packet type in ControllerShortcut"),
-                            }
-                        },
-                    },
-                    // Correct error handling:
-                    Err(TryRecvError::Disconnected) => panic!("Event channel disconnected!"),  // Correct match
-                    Err(TryRecvError::Empty) => break,          // Correct: Break on Empty
-                _ => {}} // Removed unnecessary _ => {}
-            }
+                match self.event_receiver.try_recv() {
+                    Ok(DroneEvent::PacketSent(packet)) => self.handle_packet_sent(packet),
+                    Ok(_) => continue, // Ignore other events in this function
+                    Err(TryRecvError::Empty) => break,
+                    Err(TryRecvError::Disconnected) => panic!("Event channel disconnected!"),
+                }
             }
         }
+
+    fn process_packet_dropped_events(&mut self) {
+        loop {
+
+            match self.event_receiver.try_recv() {
+                Ok(DroneEvent::PacketDropped(packet)) => self.handle_packet_dropped(packet),
+                Ok(_) => continue, // Ignore other events in this function
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => panic!("Event channel disconnected!"),
+            }
+        }
+    }
+
+    fn process_controller_shortcut_events(&mut self) {
+        loop {
+            match self.event_receiver.try_recv() {
+                Ok(DroneEvent::ControllerShortcut(packet)) => { // Correct matching
+                    // ... (Handle ControllerShortcut)
+                },
+
+                Ok(_) => continue, // Ignore other events in this function
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => panic!("Event channel disconnected!"),
+            }
+        }
+    }
 
     fn get_source_from_packet(&self, packet: &Packet) -> NodeId {
         if let Some(first_hop) = packet.routing_header.hops.first() {
