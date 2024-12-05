@@ -11,7 +11,7 @@ use wg_2024::{
 };
 use wg_2024::controller::DroneCommand;
 use wg_2024::network::SourceRoutingHeader;
-use crate::general::{ServerCommand, ServerEvent};
+use crate::general_use::{ServerCommand, ServerEvent};
 
 #[derive(Debug)]
 pub struct Server{
@@ -20,10 +20,16 @@ pub struct Server{
     pub controller_recv: Receiver<ServerCommand>,
     pub packet_recv: Receiver<Packet>,
     pub packet_send: HashMap<NodeId, Sender<Packet>>,
+    pub list_users: Vec<NodeId>,
 }
 
 pub trait CommunicationServer{
-
+    fn add_user(&mut self, client_id: NodeId);
+    fn get_list(&self) -> Vec<NodeId>;
+    fn forward_list(&self);
+    fn get_message();
+    fn forward_message();
+    fn forward_content();
 }
 pub trait ContentServer{
 
@@ -44,6 +50,7 @@ impl Server{
             controller_recv,
             packet_recv,
             packet_send: HashMap::new(),
+            list_users: Vec::new(),
         }
     }
     fn run(&mut self) {
@@ -115,5 +122,31 @@ impl Server{
 
     fn handle_fragment(&mut self, fragment: Fragment, session_id: u64) {
 
+    }
+}
+
+impl CommunicationServer for Server{
+    fn add_user(&mut self, client_id: NodeId) {
+        self.list_users.push(client_id);
+    }
+
+    fn get_list(&self) -> Vec<NodeId> {
+        self.list_users.clone()
+    }
+
+    fn forward_list(&self) {
+
+    }
+
+    fn get_message() {
+        todo!()
+    }
+
+    fn forward_message() {
+        todo!()
+    }
+
+    fn forward_content() {
+        todo!()
     }
 }
