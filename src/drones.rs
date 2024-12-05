@@ -87,73 +87,66 @@ impl KrustyCrapDrone {
         self.packet_send.remove(&id);
     }
 
-    fn handle_nack(&mut self, nack: Nack, source_routing_header: SourceRoutingHeader, session_id: u64) {
-        let hop_index = source_routing_header.hop_index;
-        let hops = source_routing_header.hops;
-        let next_hop_index = hop_index + 1;
-
-        let Some(next_hop_id) = hops.get(next_hop_index) else {
-            eprintln!(
-                "Routing error in handle_nack: hop_index {} exceeds hops length for session_id {}",
-                next_hop_index, session_id
-            );
+    fn handle_nack(&mut self, nack: Nack, mut routing_header: SourceRoutingHeader, session_id: u64) {
+        let Some(current_hop) = routing_header.current_hop() else {
+            // TODO: Send the packet through the simulation controller
             return;
         };
 
-        let Some(sender) = self.get_sender_of(*next_hop_id) else {
-            eprintln!("No sender found for node_id {}", next_hop_id);
+        if self.id != current_hop {
+            // TODO: Send the packet through the simulation controller
+            return;
+        }
+
+        let Some(next_hop) = routing_header.next_hop() else {
+            // TODO: Send the packet through the simulation controller
             return;
         };
 
-        let packet = Packet {
-            pack_type: PacketType::Nack(nack),
-            routing_header: SourceRoutingHeader {
-                hop_index: next_hop_index,
-                hops: hops.clone()
-            },
-            session_id,
+        let Some(sender) = self.get_sender_of(*next_hop) else {
+            // TODO: Send the packet through the simulation controller
+            return;
         };
+
+        routing_header.increase_hop_index();
+        let packet = Packet::new_nack(routing_header, session_id, nack);
 
         if let Err(e) = sender.send(packet) {
             eprintln!(
-                "Failed to forward Nack for session_id {} to node_id {}: {:?}",
-                session_id, next_hop_id, e
+                "Failed to forward Packet for session_id {} to node_id {}: {:?}",
+                session_id, next_hop, e
             );
         }
     }
 
-    fn handle_ack(&mut self, ack: Ack, source_routing_header: SourceRoutingHeader, session_id: u64) {
-        let hop_index = source_routing_header.hop_index;
-        let hops = source_routing_header.hops;
-        let next_hop_index = hop_index + 1;
-
-
-        let Some(next_hop_id) = hops.get(next_hop_index) else {
-            eprintln!(
-                "Routing error in handle_ack: hop_index {} exceeds hops length for session_id {}",
-                next_hop_index, session_id
-            );
+    fn handle_ack(&mut self, ack: Ack, mut routing_header: SourceRoutingHeader, session_id: u64) {
+        let Some(current_hop) = routing_header.current_hop() else {
+            // TODO: Send the packet through the simulation controller
             return;
         };
 
-        let Some(sender) = self.get_sender_of(*next_hop_id) else {
-            eprintln!("No sender found for node_id {}", next_hop_id);
+        if self.id != current_hop {
+            // TODO: Send the packet through the simulation controller
+            return;
+        }
+
+        let Some(next_hop) = routing_header.next_hop() else {
+            // TODO: Send the packet through the simulation controller
             return;
         };
 
-        let packet = Packet {
-            pack_type: PacketType::Ack(ack),
-            routing_header: SourceRoutingHeader {
-                hop_index: next_hop_index,
-                hops: hops.clone()
-            },
-            session_id,
+        let Some(sender) = self.get_sender_of(*next_hop) else {
+            // TODO: Send the packet through the simulation controller
+            return;
         };
+
+        routing_header.increase_hop_index();
+        let packet = Packet::new_ack(routing_header, session_id, ack.fragment_index);
 
         if let Err(e) = sender.send(packet) {
             eprintln!(
-                "Failed to forward ACK for session_id {} to node_id {}: {:?}",
-                session_id, next_hop_id, e
+                "Failed to forward Packet for session_id {} to node_id {}: {:?}",
+                session_id, next_hop, e
             );
         }
     }
@@ -164,7 +157,11 @@ impl KrustyCrapDrone {
             return;
         }
 
-        if self.id != routing_header.current_hop().unwrap() {
+        let Some(current_hop) = routing_header.current_hop() else {
+            // TODO: Send Nack (UnexpectedRecipient(self.id))
+            return;
+        };
+        if self.id != current_hop {
             // TODO: Send Nack (UnexpectedRecipient(self.id))
             return;
         }
@@ -179,8 +176,7 @@ impl KrustyCrapDrone {
             return;
         };
 
-        let random_number = rand::rng().random_range(0.0..1.0);
-        if random_number < self.pdr {
+        if rand::rng().random_range(0.0..1.0) < self.pdr {
             // TODO: Send Nack (Dropped)
             return;
         }
@@ -190,7 +186,7 @@ impl KrustyCrapDrone {
 
         if let Err(e) = sender.send(packet) {
             eprintln!(
-                "Failed to forward Fragment for session_id {} to node_id {}: {:?}",
+                "Failed to forward Packet for session_id {} to node_id {}: {:?}",
                 session_id, next_hop, e
             );
         }
