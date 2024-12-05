@@ -4,6 +4,7 @@ use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{Ack, FloodRequest, FloodResponse, Fragment, Nack, NodeType, Packet, PacketType};
+use rand::Rng;
 
 pub struct KrustyCrapDrone {
     id: NodeId,
@@ -157,69 +158,65 @@ impl KrustyCrapDrone {
         }
     }
 
-    fn handle_fragment(&mut self, fragment: Fragment, source_routing_header: SourceRoutingHeader, session_id: u64) {
+    fn handle_fragment(&mut self, fragment: Fragment, mut routing_header: SourceRoutingHeader, session_id: u64) {
         if self.crashing_behavior {
         // TODO: Send Nack (ErrorInRouting(self.id))
             return;
         }
 
-        let hop_index = source_routing_header.hop_index;
-        let hops = source_routing_header.hops;
-
-        if self.id != hops[hop_index] {
-            // TODO: Send Nack (UnexpectedRecipient)
+        if self.id != routing_header.current_hop().unwrap() {
+            // TODO: Send Nack (UnexpectedRecipient(self.id))
             return;
         }
 
-        let next_hop_index = hop_index + 1;
-
-        let Some(next_hop_id) = hops.get(next_hop_index) else {
+        let Some(next_hop) = routing_header.next_hop() else {
             // TODO: Send Nack (DestinationIsDrone)
             return;
         };
 
-        let Some(sender) = self.get_sender_of(*next_hop_id) else {
+        let Some(sender) = self.get_sender_of(*next_hop) else {
             // TODO: Send Nack (ErrorInRouting(next_hop_id))
             return;
         };
 
-        let packet = Packet {
-            pack_type: PacketType::MsgFragment(fragment),
-            routing_header: SourceRoutingHeader {
-                hop_index: next_hop_index,
-                hops: hops.clone()
-            },
-            session_id,
-        };
+        let random_number = rand::rng().random_range(0.0..1.0);
+        if random_number < self.pdr {
+            // TODO: Send Nack (Dropped)
+            return;
+        }
+
+        routing_header.increase_hop_index();
+        let packet = Packet::new_fragment(routing_header, session_id, fragment);
 
         if let Err(e) = sender.send(packet) {
             eprintln!(
                 "Failed to forward Fragment for session_id {} to node_id {}: {:?}",
-                session_id, next_hop_id, e
+                session_id, next_hop, e
             );
         }
     }
 
-    fn handle_flood_request(&mut self, flood_request: FloodRequest, session_id: u64) {
-        let mut new_path_trace = flood_request.path_trace.clone();
-        new_path_trace.push((self.id, NodeType::Drone));
+    fn handle_flood_request(&mut self, mut flood_request: FloodRequest, session_id: u64) {
+        flood_request.increment(self.id, NodeType::Drone);
 
         // flood ID has already been received
         if self.flood_ids.contains(&flood_request.flood_id) {
-            self.send_flood_response(new_path_trace, flood_request.flood_id, session_id);
+            let response = flood_request.generate_response(session_id);
+            self.send_flood_response(response, flood_request.path_trace, flood_request.flood_id);
             return;
         }
 
         // flood ID has not yet been received
         self.flood_ids.insert(flood_request.flood_id);
 
-        if let Some(sender_id) = self.get_prev_node_id(&new_path_trace) {
+        if let Some(sender_id) = self.get_prev_node_id(&flood_request.path_trace) {
             let neighbors = self.get_neighbors_except(sender_id);
 
             if !neighbors.is_empty() {
-                self.forward_flood_request(neighbors, flood_request, new_path_trace, session_id);
+                self.forward_flood_request(neighbors, flood_request, session_id);
             } else {
-                self.send_flood_response(new_path_trace, flood_request.flood_id, session_id);
+                let response = flood_request.generate_response(session_id);
+                self.send_flood_response(response, flood_request.path_trace, flood_request.flood_id);
             }
         } else {
             eprintln!("Could not determine previous node for FloodRequest");
@@ -228,10 +225,11 @@ impl KrustyCrapDrone {
 
     fn send_flood_response(
         &self,
+        response: Packet,
         path_trace: Vec<(NodeId, NodeType)>,
         flood_id: u64,
-        session_id: u64
-    ) {
+    )
+    {
         // Getting the previous node from path_trace
         let Some(prev_node_id) = self.get_prev_node_id(&path_trace) else {
             eprintln!("No previous node found in path_trace for flood_id {}", flood_id);
@@ -244,26 +242,7 @@ impl KrustyCrapDrone {
             return;
         };
 
-        let reversed_path = path_trace
-            .iter()
-            .map(|(node_id, _)| *node_id)
-            .rev()
-            .collect();
-
-        let packet = Packet {
-            pack_type: PacketType::FloodResponse(
-                FloodResponse {
-                    flood_id,
-                    path_trace,
-                }),
-            routing_header: SourceRoutingHeader {
-                hop_index: 1,
-                hops: reversed_path,
-            },
-            session_id,
-        };
-
-        if let Err(e) = sender.send(packet) {
+        if let Err(e) = sender.send(response) {
             eprintln!("Failed to send packet: {:?}", e);
         }
     }
@@ -304,19 +283,14 @@ impl KrustyCrapDrone {
     fn forward_flood_request(
         &self,
         neighbors: Vec<&Sender<Packet>>,
-        flood_request: FloodRequest,
-        new_path_trace: Vec<(NodeId, NodeType)>,
+        request: FloodRequest,
         session_id: u64,
-    ) {
+    )
+    {
         for sender in neighbors {
-            let packet = Packet {
-                pack_type: PacketType::FloodRequest(FloodRequest {
-                    path_trace: new_path_trace.clone(),
-                    ..flood_request
-                }),
-                routing_header: SourceRoutingHeader { hop_index: 0, hops: vec![] },
-                session_id,
-            };
+            let routing_header = SourceRoutingHeader::empty_route();
+            let packet = Packet::new_flood_request(routing_header, session_id, request.clone());
+
             if let Err(e) = sender.send(packet) {
                 eprintln!("Failed to forward FloodRequest: {:?}", e);
             }
@@ -328,7 +302,8 @@ impl KrustyCrapDrone {
         flood_response: FloodResponse,
         mut routing_header: SourceRoutingHeader,
         session_id: u64,
-    ) {
+    )
+    {
         // Getting the previous node from path_trace
         let Some(prev_node_id) = self.get_prev_node_id(&flood_response.path_trace) else {
             eprintln!("No previous node found in path_trace for flood_id {}", flood_response.flood_id);
@@ -342,14 +317,10 @@ impl KrustyCrapDrone {
         };
 
         // Updating hop_index
-        routing_header.hop_index += 1;
+        routing_header.increase_hop_index();
 
         // Creating a new FloodResponse package
-        let packet = Packet {
-            pack_type: PacketType::FloodResponse(flood_response),
-            routing_header,
-            session_id,
-        };
+        let packet = Packet::new_flood_response(routing_header, session_id, flood_response);
 
         // Sending a package
         if let Err(e) = sender.send(packet) {
