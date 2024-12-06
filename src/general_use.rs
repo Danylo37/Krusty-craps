@@ -19,4 +19,6 @@ pub enum ServerEvent{
 /// From controller to Client
 pub enum ClientCommand {
 }
-
+pub enum ClientEvent{
+    
+}
