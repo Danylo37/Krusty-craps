@@ -136,26 +136,26 @@ impl KrustyCrapDrone {
 
         // Retrieve the current hop from the routing header
         // If it doesn't exist, send a Nack
-        let Some(current_hop) = routing_header.current_hop() else {
+        let Some(current_hop_id) = routing_header.current_hop() else {
             // TODO: Send Nack (UnexpectedRecipient(self.id))
             return;
         };
         // If the current hop isn't the drone's ID, send a Nack
-        if self.id != current_hop {
+        if self.id != current_hop_id {
             // TODO: Send Nack (UnexpectedRecipient(self.id))
             return;
         }
 
         // Retrieve the next hop from the routing header
         // If it doesn't exist, send a Nack
-        let Some(next_hop) = routing_header.next_hop() else {
+        let Some(next_hop_id) = routing_header.next_hop() else {
             // TODO: Send Nack (DestinationIsDrone)
             return;
         };
 
         // Attempt to find the sender for the next hop
         // If the sender isn't found, send a Nack
-        let Some(sender) = self.packet_send.get(&next_hop) else {
+        let Some(sender) = self.packet_send.get(&next_hop_id) else {
             // TODO: Send Nack (ErrorInRouting(next_hop_id))
             return;
         };
@@ -212,13 +212,13 @@ impl KrustyCrapDrone {
 
     fn send_flood_response(&self, response: Packet, path_trace: Vec<(NodeId, NodeType)>) {
         // Getting the previous node from path_trace
-        let Some(prev_node) = self.get_prev_node_id(&path_trace) else {
+        let Some(prev_node_id) = self.get_prev_node_id(&path_trace) else {
             // TODO: Send the packet through the simulation controller
             return;
         };
 
         // Getting the send channel for the previous node
-        let Some(sender) = self.packet_send.get(&prev_node) else {
+        let Some(sender) = self.packet_send.get(&prev_node_id) else {
             // TODO: Send the packet through the simulation controller
             return;
         };
@@ -289,19 +289,19 @@ impl KrustyCrapDrone {
     }
 
     fn get_sender_of_next(&self, routing_header: SourceRoutingHeader) -> Option<&Sender<Packet>> {
-        let Some(current_hop) = routing_header.current_hop() else {
+        let Some(current_hop_id) = routing_header.current_hop() else {
             return None;
         };
 
-        if self.id != current_hop {
+        if self.id != current_hop_id {
             return None;
         }
 
-        let Some(next_hop) = routing_header.next_hop() else {
+        let Some(next_hop_id) = routing_header.next_hop() else {
             return None;
         };
 
-        self.packet_send.get(&next_hop)
+        self.packet_send.get(&next_hop_id)
     }
 
     fn send_to_next(&self, packet: Packet, routing_header: SourceRoutingHeader) {
