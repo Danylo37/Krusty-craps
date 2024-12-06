@@ -12,7 +12,7 @@ use crate::drones::KrustyCrapDrone;
 use crate::server;
 use crate::clients;
 use crate::general_use::{ClientCommand, ServerCommand};
-use crate::server::ContentServer;
+use crate::simulation_controller::SimulationController;
 
 pub struct NetworkInit {
     drone_sender_channels: HashMap<NodeId, Sender<Packet>>,
