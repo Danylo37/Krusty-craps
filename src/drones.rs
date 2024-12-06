@@ -1,11 +1,13 @@
 use crossbeam_channel::{select_biased, Receiver, Sender};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use rand::Rng;
 
-use wg_2024::controller::{DroneCommand, DroneEvent};
-use wg_2024::drone::Drone;
-use wg_2024::network::{NodeId, SourceRoutingHeader};
-use wg_2024::packet::{Ack, FloodRequest, FloodResponse, Fragment, Nack, NackType, NodeType, Packet, PacketType};
+use wg_2024::{
+    controller::{DroneCommand, DroneEvent},
+    drone::Drone,
+    network::{NodeId, SourceRoutingHeader},
+    packet::{Ack, FloodRequest, FloodResponse, Fragment, Nack, NackType, NodeType, Packet, PacketType},
+};
 
 pub struct KrustyCrapDrone {
     id: NodeId,
@@ -14,7 +16,7 @@ pub struct KrustyCrapDrone {
     packet_recv: Receiver<Packet>,
     pdr: f32,
     packet_send: HashMap<NodeId, Sender<Packet>>,
-    floods: HashMap<NodeId, u64>,
+    floods: HashMap<NodeId, HashSet<u64>>,
     crashing_behavior: bool,
 }
 
@@ -223,7 +225,7 @@ impl KrustyCrapDrone {
 
         // Flood ID has already been received from this flood initiator
         if self.floods.contains_key(&initiator_id) &&
-            self.floods.get(&initiator_id).unwrap().to_owned() == flood_id {
+            self.floods.get(&initiator_id).unwrap().contains(&flood_id) {
             // Generate and send the flood response
             let response = flood_request.generate_response(session_id);
             self.send_to_next_hop(response);
@@ -231,10 +233,13 @@ impl KrustyCrapDrone {
         }
 
         // Flood ID has not yet been received from this flood initiator
-        self.floods.insert(initiator_id, flood_id);
+        if !self.floods.contains_key(&initiator_id) {
+            self.floods.insert(initiator_id, HashSet::new());
+        }
+        self.floods.get(&initiator_id).unwrap().to_owned().insert(flood_id);
 
         // Check if there's a previous node (sender) in the flood path
-        if let Some(sender_id) = self.get_last_node_id(&flood_request.path_trace) {
+        if let Some(sender_id) = self.get_prev_node_id(&flood_request.path_trace) {
             // Get all neighboring nodes except the sender
             let neighbors = self.get_neighbors_except(sender_id);
 
