@@ -5,7 +5,7 @@ use rand::Rng;
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
-use wg_2024::packet::{Ack, FloodRequest, FloodResponse, Fragment, Nack, NodeType, Packet, PacketType};
+use wg_2024::packet::{Ack, FloodRequest, FloodResponse, Fragment, Nack, NackType, NodeType, Packet, PacketType};
 
 pub struct KrustyCrapDrone {
     id: NodeId,
@@ -98,10 +98,10 @@ impl KrustyCrapDrone {
         routing_header.increase_hop_index();
 
         // Create a new Nack packet using the updated routing header, session ID, and nack
-        let packet = Packet::new_nack(routing_header.clone(), session_id, nack);
+        let packet = Packet::new_nack(routing_header, session_id, nack);
 
         // Attempt to send the Nack packet to the next hop in the route
-        self.send_to_next(packet, routing_header);
+        self.send_to_next_hop(packet);
     }
 
     fn handle_ack(
@@ -114,10 +114,10 @@ impl KrustyCrapDrone {
         routing_header.increase_hop_index();
 
         // Create a new Ack packet using the updated routing header, session ID and ack fragment_index
-        let packet = Packet::new_ack(routing_header.clone(), session_id, ack.fragment_index);
+        let packet = Packet::new_ack(routing_header, session_id, ack.fragment_index);
 
         // Attempt to send the Ack packet to the next hop in the route
-        self.send_to_next(packet, routing_header);
+        self.send_to_next_hop(packet);
     }
 
     fn handle_fragment(
@@ -130,56 +130,80 @@ impl KrustyCrapDrone {
         // Check if the drone is in a crashing state
         // If so, send a Nack
         if self.crashing_behavior {
-            // TODO: Send Nack (ErrorInRouting(self.id))
+            self.send_nack(NackType::ErrorInRouting(self.id), fragment.fragment_index, routing_header, session_id);
             return;
         }
 
         // Retrieve the current hop from the routing header
         // If it doesn't exist, send a Nack
         let Some(current_hop_id) = routing_header.current_hop() else {
-            // TODO: Send Nack (UnexpectedRecipient(self.id))
+            self.send_nack(NackType::UnexpectedRecipient(self.id), fragment.fragment_index, routing_header, session_id);
             return;
         };
         // If the current hop isn't the drone's ID, send a Nack
         if self.id != current_hop_id {
-            // TODO: Send Nack (UnexpectedRecipient(self.id))
+            self.send_nack(NackType::UnexpectedRecipient(self.id), fragment.fragment_index, routing_header, session_id);
             return;
         }
 
         // Retrieve the next hop from the routing header
         // If it doesn't exist, send a Nack
         let Some(next_hop_id) = routing_header.next_hop() else {
-            // TODO: Send Nack (DestinationIsDrone)
+            self.send_nack(NackType::DestinationIsDrone, fragment.fragment_index, routing_header, session_id);
             return;
         };
 
         // Attempt to find the sender for the next hop
         // If the sender isn't found, send a Nack
         let Some(sender) = self.packet_send.get(&next_hop_id) else {
-            // TODO: Send Nack (ErrorInRouting(next_hop_id))
+            self.send_nack(NackType::ErrorInRouting(next_hop_id), fragment.fragment_index, routing_header, session_id);
             return;
         };
-
-        // Simulate packet drop based on the PDR
-        // If the random number is less than PDR, drop the packet (send a Nack)
-        if rand::rng().random_range(0.0..1.0) < self.pdr {
-            // TODO: Send Nack (Dropped)
-            return;
-        }
 
         // Increment the hop index in the routing header to reflect progress through the route
         routing_header.increase_hop_index();
 
         // Create a new Fragment packet using the updated routing header, session ID and fragment
-        let packet = Packet::new_fragment(routing_header, session_id, fragment);
+        let packet = Packet::new_fragment(routing_header.clone(), session_id, fragment.clone());
+
+        // Simulate packet drop based on the PDR
+        // If the random number is less than PDR, drop the packet (send a Nack)
+        if rand::rng().random_range(0.0..1.0) < self.pdr {
+            self.send_nack(NackType::Dropped, fragment.fragment_index, routing_header, session_id);
+            self.send_event(DroneEvent::PacketDropped(packet));
+            return;
+        }
 
         // Attempt to send the updated fragment packet to the next hop
-        if let Err(_) = sender.send(packet) {
-            // TODO: idk what to do
+        if sender.send(packet.clone()).is_err() {
+            self.send_through_controller(packet.clone());
+            return;
         }
+        self.send_event(DroneEvent::PacketSent(packet));
+    }
+
+    fn send_nack(&self, nack_type: NackType, fragment_index: u64, mut routing_header: SourceRoutingHeader, session_id: u64) {
+        let nack = Nack {
+            fragment_index,
+            nack_type,
+        };
+
+        routing_header.hops.truncate(routing_header.hop_index + 1);
+        routing_header.reverse();
+        routing_header.hop_index = 1;
+
+        let nack_packet = Packet::new_nack(routing_header, session_id, nack);
+
+        self.send_to_next_hop(nack_packet.clone());
     }
 
     fn handle_flood_request(&mut self, mut flood_request: FloodRequest, session_id: u64) {
+        // Check if the drone is in a crashing state
+        // If so... do nothing?
+        if self.crashing_behavior {
+            return;
+        }
+
         flood_request.increment(self.id, NodeType::Drone);
 
         let flood_id = flood_request.flood_id;
@@ -189,7 +213,7 @@ impl KrustyCrapDrone {
         if self.floods.contains_key(&initiator_id) &&
             self.floods.get(&initiator_id).unwrap().to_owned() == flood_id {
             let response = flood_request.generate_response(session_id);
-            self.send_flood_response(response, flood_request.path_trace);
+            self.send_to_next_hop(response);
             return;
         }
 
@@ -203,29 +227,10 @@ impl KrustyCrapDrone {
                 self.forward_flood_request(neighbors, flood_request, session_id);
             } else {
                 let response = flood_request.generate_response(session_id);
-                self.send_flood_response(response, flood_request.path_trace);
+                self.send_to_next_hop(response);
             }
         } else {
-            // TODO: idk what to do
-        }
-    }
-
-    fn send_flood_response(&self, response: Packet, path_trace: Vec<(NodeId, NodeType)>) {
-        // Getting the previous node from path_trace
-        let Some(prev_node_id) = self.get_prev_node_id(&path_trace) else {
-            // TODO: Send the packet through the simulation controller
-            return;
-        };
-
-        // Getting the send channel for the previous node
-        let Some(sender) = self.packet_send.get(&prev_node_id) else {
-            // TODO: Send the packet through the simulation controller
-            return;
-        };
-
-        // Sending a package
-        if let Err(_) = sender.send(response) {
-            // TODO: Send the packet through the simulation controller
+            eprintln!("Unexpected error");
         }
     }
 
@@ -266,10 +271,11 @@ impl KrustyCrapDrone {
             let routing_header = SourceRoutingHeader::empty_route();
             let packet = Packet::new_flood_request(routing_header, session_id, request.clone());
 
-            // Sending a package
-            if let Err(_) = sender.send(packet) {
-                // TODO: idk what to do
+            // Send a package
+            if sender.send(packet.clone()).is_err() {
+                self.send_through_controller(packet.clone());
             }
+            self.send_event(DroneEvent::PacketSent(packet));
         }
     }
 
@@ -285,7 +291,7 @@ impl KrustyCrapDrone {
         // Creating a new FloodResponse package
         let packet = Packet::new_flood_response(routing_header.clone(), session_id, flood_response.clone());
 
-        self.send_to_next(packet, routing_header);
+        self.send_to_next_hop(packet);
     }
 
     fn get_sender_of_next(&self, routing_header: SourceRoutingHeader) -> Option<&Sender<Packet>> {
@@ -304,15 +310,42 @@ impl KrustyCrapDrone {
         self.packet_send.get(&next_hop_id)
     }
 
-    fn send_to_next(&self, packet: Packet, routing_header: SourceRoutingHeader) {
-        let Some(sender) = self.get_sender_of_next(routing_header) else {
-            // TODO: Send the packet through the simulation controller
+    fn send_to_next_hop(&self, packet: Packet) {
+        let Some(sender) = self.get_sender_of_next(packet.routing_header.clone()) else {
+            self.send_through_controller(packet.clone());
             return;
         };
 
-        // Sending a package
-        if let Err(_) = sender.send(packet) {
-            // TODO: Send the packet through the simulation controller
+        // Send a package
+        if sender.send(packet.clone()).is_err() {
+            self.send_through_controller(packet.clone());
+        }
+        self.send_event(DroneEvent::PacketSent(packet));
+    }
+
+    fn send_through_controller(&self, packet: Packet) {
+        if self.controller_send.send(DroneEvent::ControllerShortcut(packet.clone())).is_err() {
+            eprintln!("Unexpected error");
+        }
+    }
+
+    fn send_event(&self, event: DroneEvent) {
+        match event {
+            DroneEvent::PacketSent(packet) => {
+                if self.controller_send.send(DroneEvent::PacketSent(packet)).is_err() {
+                    eprintln!("Unexpected error");
+                }
+            }
+            DroneEvent::PacketDropped(packet) => {
+                if self.controller_send.send(DroneEvent::PacketDropped(packet)).is_err() {
+                    eprintln!("Unexpected error");
+                }
+            }
+            DroneEvent::ControllerShortcut(packet) => {
+                if self.controller_send.send(DroneEvent::ControllerShortcut(packet)).is_err() {
+                    eprintln!("Unexpected error");
+                }
+            }
         }
     }
 }
