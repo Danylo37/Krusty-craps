@@ -173,12 +173,9 @@ impl KrustyCrapDrone {
         // Create a new Fragment packet using the updated routing header, session ID and fragment
         let packet = Packet::new_fragment(routing_header, session_id, fragment);
 
-        // Attempt to send the new fragment packet to the next hop
-        // If sending fails, send the packet through the simulation controller
+        // Attempt to send the updated fragment packet to the next hop
         if let Err(_) = sender.send(packet) {
-            eprintln!(
-                // TODO: Send the packet through the simulation controller
-            );
+            // TODO: idk what to do
         }
     }
 
@@ -209,7 +206,7 @@ impl KrustyCrapDrone {
                 self.send_flood_response(response, flood_request.path_trace);
             }
         } else {
-            // TODO: Send the packet through the simulation controller
+            // TODO: idk what to do
         }
     }
 
@@ -271,7 +268,7 @@ impl KrustyCrapDrone {
 
             // Sending a package
             if let Err(_) = sender.send(packet) {
-                // TODO: Send the packet through the simulation controller
+                // TODO: idk what to do
             }
         }
     }
