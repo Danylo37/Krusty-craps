@@ -1,10 +1,11 @@
 use crossbeam_channel::{select_biased, Receiver, Sender};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+use rand::Rng;
+
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{Ack, FloodRequest, FloodResponse, Fragment, Nack, NodeType, Packet, PacketType};
-use rand::Rng;
 
 pub struct KrustyCrapDrone {
     id: NodeId,
@@ -13,7 +14,7 @@ pub struct KrustyCrapDrone {
     packet_recv: Receiver<Packet>,
     pdr: f32,
     packet_send: HashMap<NodeId, Sender<Packet>>,
-    flood_ids: HashSet<u64>,
+    floods: HashMap<NodeId, u64>,
     crashing_behavior: bool,
 }
 
@@ -33,7 +34,7 @@ impl Drone for KrustyCrapDrone {
             packet_recv,
             packet_send,
             pdr,
-            flood_ids: HashSet::new(),
+            floods: HashMap::new(),
             crashing_behavior: false,
         }
     }
@@ -184,15 +185,19 @@ impl KrustyCrapDrone {
     fn handle_flood_request(&mut self, mut flood_request: FloodRequest, session_id: u64) {
         flood_request.increment(self.id, NodeType::Drone);
 
-        // flood ID has already been received
-        if self.flood_ids.contains(&flood_request.flood_id) {
+        let flood_id = flood_request.flood_id;
+        let initiator_id = flood_request.initiator_id;
+
+        // Flood ID has already been received from this flood initiator
+        if self.floods.contains_key(&initiator_id) &&
+            self.floods.get(&initiator_id).unwrap().to_owned() == flood_id {
             let response = flood_request.generate_response(session_id);
             self.send_flood_response(response, flood_request.path_trace);
             return;
         }
 
-        // flood ID has not yet been received
-        self.flood_ids.insert(flood_request.flood_id);
+        // Flood ID has not yet been received from this flood initiator
+        self.floods.insert(initiator_id, flood_id);
 
         if let Some(sender_id) = self.get_prev_node_id(&flood_request.path_trace) {
             let neighbors = self.get_neighbors_except(sender_id);
