@@ -1,6 +1,6 @@
 //Server file, idk what i am doing (maybe a bit now)
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use crossbeam_channel::{select, select_biased, Receiver, Sender};
 use std::fmt::Debug;
 
@@ -16,13 +16,32 @@ use crate::general_use::{ServerCommand, ServerEvent};
 #[derive(Debug)]
 pub struct Server{
     pub id: NodeId,
-    pub controller_send: Sender<ServerEvent>,
-    pub controller_recv: Receiver<ServerCommand>,
+    pub connected_drone_ids: Vec<NodeId>,
+    pub to_controller_event: Sender<ServerEvent>,
+    pub from_controller_command: Receiver<ServerCommand>,
     pub packet_recv: Receiver<Packet>,
     pub packet_send: HashMap<NodeId, Sender<Packet>>,
     pub list_users: Vec<NodeId>,
+    pub flood_ids: HashSet<u64>,
 }
 
+///    Node Functions:
+/// new
+/// run
+/// handle_flood_request
+/// send_flood_response
+/// handle_nack
+/// handle_ack
+/// handle_fragment
+
+//     Server Functions
+// discovery
+// reassemble_fragment
+// send_back_type
+
+
+
+///Communication Server functions
 pub trait CommunicationServer{
     fn add_user(&mut self, client_id: NodeId);
     fn get_list(&self) -> Vec<NodeId>;
@@ -31,6 +50,8 @@ pub trait CommunicationServer{
     fn forward_message();
     fn forward_content();
 }
+
+///Content Server functions
 pub trait ContentServer{
 
 }
@@ -39,24 +60,27 @@ impl Server{
     pub fn new(
             id: NodeId,
             connected_drone_ids: Vec<NodeId>,
-            controller_send: Sender<ServerEvent>,
-            controller_recv: Receiver<ServerCommand>,
+            to_controller_event: Sender<ServerEvent>,
+            from_controller_command: Receiver<ServerCommand>,
             packet_recv: Receiver<Packet>,
-            packet_send: HashMap<NodeId, Sender<Packet>>
+            packet_send: HashMap<NodeId, Sender<Packet>>,
+            list_users: Vec<NodeId>,
     ) -> Self{
         Server{
             id,
-            controller_send,
-            controller_recv,
+            connected_drone_ids,
+            to_controller_event,
+            from_controller_command,
             packet_recv,
-            packet_send: HashMap::new(),
-            list_users: Vec::new(),
+            packet_send,
+            list_users,
+            flood_ids: Default::default(),
         }
     }
-    fn run(&mut self) {
+    pub fn run(&mut self) {
         loop {
             select_biased! {
-                recv(self.controller_recv) -> command_res => {
+                recv(self.from_controller_command) -> command_res => {
                     if let Ok(command) = command_res {
                         match command {
                             ServerCommand::AddSender(id, sender) => {
@@ -83,14 +107,33 @@ impl Server{
             }
         }
     }
+
     pub fn discovery(&self){
-        let flood_request = FloodRequest{
-            flood_id: 1,
-            initiator_id: self.id,
-            path_trace: Vec::new(),
-        };
+
+        let flood_request = FloodRequest::initialize(
+            self.generate_unique_flood_id(), // Replace with your ID generation
+            self.id,
+            NodeType::Server,
+        );
+
+        let packet = Packet::new_flood_request(
+            SourceRoutingHeader::empty_route(),
+            self.generate_unique_session_id(),
+            flood_request.clone(),
+        );
+
+        for sender in self.packet_send.values() {
+
+            if let Err(e) = sender.send(packet.clone()) {
+                eprintln!("Failed to send FloodRequest: {:?}", e);
+            }
+        }
     }
 
+    fn handle_flood_request(&mut self, flood_request: FloodRequest, session_id: u64) {}
+    fn send_flood_response(){}
+
+    pub fn give_type_back(&self){}
 
     //Handling messages?
     fn create_message(pack_type: PacketType, route: Vec<NodeId>, session_id: u64 )->Packet{
@@ -100,6 +143,7 @@ impl Server{
             session_id,
         }
     }
+
     fn create_source_routing(route: Vec<NodeId>) -> SourceRoutingHeader{
         SourceRoutingHeader {
             hop_index: 1,
@@ -107,22 +151,16 @@ impl Server{
         }
     }
 
-    fn reassemble_fragment(){
+    fn reassemble_fragment(){}
 
-    }
-
-
-    fn handle_nack(&mut self, nack: Nack) {
-
-    }
+    fn handle_nack(&mut self, nack: Nack) {}
 
     fn handle_ack(&mut self, _ack: Ack) {
         todo!()
     }
 
-    fn handle_fragment(&mut self, fragment: Fragment, session_id: u64) {
+    fn handle_fragment(&mut self, fragment: Fragment, session_id: u64) {}
 
-    }
 }
 
 impl CommunicationServer for Server{

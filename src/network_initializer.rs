@@ -3,7 +3,7 @@ use std::{fs, thread};
 use crossbeam_channel::*;
 
 use wg_2024::{
-    packet::Packet,
+    packet::{Packet, NodeType},
     config::{Config,Drone,Server,Client},
     controller::{DroneEvent, DroneCommand},
     network::NodeId,
@@ -11,8 +11,8 @@ use wg_2024::{
 use crate::drones::KrustyCrapDrone;
 use crate::server;
 use crate::clients;
-use crate::general_use::{ClientCommand, ServerCommand};
-use crate::server::ContentServer;
+use crate::general_use::{ClientCommand,ClientEvent, ServerCommand, ServerEvent};
+use crate::simulation_controller::SimulationController;
 
 pub struct NetworkInit {
     drone_sender_channels: HashMap<NodeId, Sender<Packet>>,
@@ -48,33 +48,33 @@ impl NetworkInit {
         }
 
         //Creating the channels for sending Events to Controller (For Drones, Clients and Servers)
-        let (sim_sender_drone, sim_recv_drone) = unbounded();
-        let (sim_sender_client, sim_recv_client) = unbounded();
-        let (sim_sender_server, sim_recv_server) = unbounded();
+        let (to_control_event_drone, control_get_event_drone) = unbounded();
+        let (to_control_event_client, control_get_event_client) = unbounded();
+        let (to_control_event_server, control_get_event_server) = unbounded();
 
         
         //Creating controller
         let mut controller = SimulationController::new(
-            sim_sender_drone.clone(),
-            sim_recv_drone,
-            sim_sender_client.clone(),
-            sim_recv_client,
-            sim_sender_server.clone(),
-            sim_recv_server
+            to_control_event_drone.clone(),
+            control_get_event_drone,
+            to_control_event_client.clone(),
+            control_get_event_client,
+            to_control_event_server.clone(),
+            control_get_event_server
         );
 
 
         //Looping to get Drones
-        self.create_drones(config.drone, &mut controller, sim_sender_drone);
+        self.create_drones(config.drone, &mut controller, to_control_event_drone);
 
         //Looping through servers (we have to decide how to split since we have two)
-        self.create_clients(config.client, &mut controller, sim_sender_client);
+        self.create_clients(config.client, &mut controller, to_control_event_client);
 
         //Looping through Clients
-        self.create_servers(config.server, &mut controller, sim_sender_server);
+        self.create_servers(config.server, &mut controller, to_control_event_server);
 
         //Connecting the Nodes
-        self.connect_nodes(neighbours);
+        self.connect_nodes(&mut controller, neighbours);
 
     }
 
@@ -108,7 +108,7 @@ impl NetworkInit {
         }
     }
 
-    fn create_clients(&mut self, config_client: Vec<Client>, controller: &mut SimulationController, to_contr_event: Sender<DroneEvent> ) {
+    fn create_clients(&mut self, config_client: Vec<Client>, controller: &mut SimulationController, to_contr_event: Sender<ClientEvent> ) {
         for client in config_client {
 
             let (to_client_command_sender, client_get_command_recv):(Sender<ClientCommand>,Receiver<ClientCommand>) = unbounded();
@@ -131,7 +131,7 @@ impl NetworkInit {
             });
         }
     }
-    fn create_servers(&mut self, config_server: Vec<Server>, controller: &mut SimulationController, to_contr_event: Sender<DroneEvent> ) {
+    fn create_servers(&mut self, config_server: Vec<Server>, controller: &mut SimulationController, to_contr_event: Sender<ServerEvent> ) {
         for server in config_server {
             let (to_server_command_sender, server_get_command_recv):(Sender<ServerCommand>,Receiver<ServerCommand>) = unbounded();
             controller.register_server(server.id, to_server_command_sender);
@@ -149,6 +149,7 @@ impl NetworkInit {
 
                 let mut server = server::Server::new(
                     server.id,
+                    Vec::new(),
                     copy_contr_event,
                     server_get_command_recv,
                     packet_receiver,
@@ -163,8 +164,37 @@ impl NetworkInit {
     }
 
     fn connect_nodes(&self, controller: &mut SimulationController, neighbours: HashMap<NodeId, Vec<NodeId>>) {
-        
+        for (node_id, connected_node_ids) in neighbours.iter() {
+            for &connected_node_id in connected_node_ids {
+                // Retrieve the Sender channel based on node type
+                let sender_channel = match self.get_sender_for_node(*node_id) {
+                    Some((NodeType::Drone, sender)) =>
+                        // Use the 'controller' to establish the connection
+                        controller.add_sender(*node_id, NodeType::Drone,connected_node_id, sender),
+                    
+                    Some((NodeType::Client, sender)) =>
+                        controller.add_sender(*node_id, NodeType::Client,connected_node_id, sender),
+                    
+                    Some((NodeType::Server, sender)) =>
+                        controller.add_sender(*node_id, NodeType::Server,connected_node_id, sender),
+                    
+                    None => panic!("Sender channel not found for node {}!", *node_id),
+                };
+            }
+        }
     }
 
+    fn get_sender_for_node(&self, node_id: NodeId) -> Option<(NodeType, Sender<Packet>)> {
+        if let Some(sender) = self.drone_sender_channels.get(&node_id) {
+            return Some((NodeType::Drone, sender.clone()));
+        }
+        if let Some(sender) = self.clients_sender_channels.get(&node_id) {
+            return Some((NodeType::Client, sender.clone()));
+        }
+        if let Some(sender) = self.servers_sender_channels.get(&node_id) {
+            return Some((NodeType::Server, sender.clone()));
+        }
+        None // Sender not found in any HashMap
+    }
 }
 
