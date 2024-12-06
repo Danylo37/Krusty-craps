@@ -53,7 +53,7 @@ impl Drone for KrustyCrapDrone {
                     }
                 },
             }
-            if self.packet_recv.is_empty() {
+            if self.crashing_behavior && self.packet_recv.is_empty() {
                 break;
             }
         }
