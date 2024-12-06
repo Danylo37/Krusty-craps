@@ -18,6 +18,8 @@ pub enum ServerEvent{
 
 /// From controller to Client
 pub enum ClientCommand {
+    RemoveSender(NodeId),
+    AddSender(NodeId, Sender<Packet>)
 }
 pub enum ClientEvent{
     
