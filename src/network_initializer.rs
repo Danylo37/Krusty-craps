@@ -11,7 +11,7 @@ use wg_2024::{
 use crate::drones::KrustyCrapDrone;
 use crate::server;
 use crate::clients;
-use crate::general_use::{ClientCommand,ClientEvent, ServerCommand, ServerEvent};
+use crate::general_use::{ClientCommand,ClientEvent, ServerCommand, ServerEvent, ServerType};
 use crate::simulation_controller::SimulationController;
 
 pub struct NetworkInit {
@@ -149,6 +149,7 @@ impl NetworkInit {
 
                 let mut server = server::Server::new(
                     server.id,
+                    ServerType::Communication,
                     Vec::new(),
                     copy_contr_event,
                     server_get_command_recv,
