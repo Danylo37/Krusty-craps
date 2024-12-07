@@ -29,27 +29,27 @@ pub struct PacketInfo {
 
 pub struct SimulationController {
     pub state: SimulationState,
+    pub drone_event_sender: Sender<DroneEvent>,
     pub drone_event_receiver: Receiver<DroneEvent>,
+    pub client_event_sender: Sender<ClientEvent>,
     pub client_event_receiver: Receiver<ClientEvent>,
+    pub server_event_sender: Sender<ServerEvent>,
     pub server_event_receiver: Receiver<ServerEvent>,
     pub command_senders_drones: HashMap<NodeId, Sender<DroneCommand>>,
     pub command_senders_clients: HashMap<NodeId, Sender<ClientCommand>>,
     pub command_senders_servers: HashMap<NodeId, Sender<ServerCommand>>,
-    pub drone_event_sender: Sender<DroneEvent>,
-    pub client_event_sender: Sender<ClientEvent>,
-    pub server_event_sender: Sender<ServerEvent>,
     pub packet_senders: HashMap<NodeId, Sender<Packet>>,
 }
 
 
 impl SimulationController {
     pub fn new(
-        drone_event_receiver: Receiver<DroneEvent>,
-        client_event_receiver: Receiver<ClientEvent>,
-        server_event_receiver: Receiver<ServerEvent>,
         drone_event_sender: Sender<DroneEvent>,
+        drone_event_receiver: Receiver<DroneEvent>,
         client_event_sender: Sender<ClientEvent>,
+        client_event_receiver: Receiver<ClientEvent>,
         server_event_sender: Sender<ServerEvent>,
+        server_event_receiver: Receiver<ServerEvent>,
         available_drone_types: Vec<String>,
     ) -> Self {
         Self {
@@ -59,15 +59,15 @@ impl SimulationController {
                 packet_history: Vec::new(),
                 available_drone_types, // Initialize available drone types
             },
-            drone_event_receiver,
             command_senders_drones: HashMap::new(),
-            client_event_receiver,
             command_senders_clients: HashMap::new(),
-            server_event_receiver,
             command_senders_servers: HashMap::new(),
             drone_event_sender,
+            drone_event_receiver,
             client_event_sender,
+            client_event_receiver,
             server_event_sender,
+            server_event_receiver,
             packet_senders: HashMap::new(),
         }
     }
@@ -100,9 +100,10 @@ impl SimulationController {
     /// Spawns a new drone.
     pub fn create_drone<T: Drone + Send + 'static>(&mut self,
         drone_id: NodeId,
+        event_sender: Sender<DroneEvent>,
         command_receiver: Receiver<DroneCommand>,
         packet_receiver: Receiver<Packet>,
-        connected_nodes: Vec<NodeId>,
+        connected_nodes: HashMap<NodeId, Sender<Packet>>,
         pdr: f32,
     ) -> Result<T, String> {
 
@@ -111,13 +112,14 @@ impl SimulationController {
             "default_drone".to_string()
         });
 
-        let packet_senders: HashMap<NodeId, Sender<Packet>> = connected_nodes
-            .into_iter()
-            .filter_map(|id| self.packet_senders.get(&id).cloned().map(|sender| (id, sender)))
-            .collect();
-
         let drone: Result<T, String> = match drone_type_name.as_str() {
-            "KrustyCrapDrone" => Ok(T::new(drone_id, self.drone_event_sender.clone(), command_receiver, packet_receiver, packet_senders, pdr)), // Use self.drone_event_sender
+            "KrustyCrapDrone" => Ok(T::new(
+                drone_id,
+                self.drone_event_sender.clone(),
+                command_receiver,
+                packet_receiver,
+                connected_nodes,
+                pdr)),
             _ => Err(format!("Unknown drone type: {}", drone_type_name)),
         };
 
