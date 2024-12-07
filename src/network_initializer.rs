@@ -13,6 +13,7 @@ use crate::server;
 use crate::clients;
 use crate::general_use::{ClientCommand,ClientEvent, ServerCommand, ServerEvent, ServerType};
 use crate::simulation_controller::SimulationController;
+use crate::ui::interface;
 
 pub struct NetworkInit {
     drone_sender_channels: HashMap<NodeId, Sender<Packet>>,
@@ -76,10 +77,19 @@ impl NetworkInit {
         //Connecting the Nodes
         self.connect_nodes(&mut controller, neighbours);
 
+        Self::start_ui();
     }
 
+    /// UI
+    pub fn start_ui(){
+        interface();
+    }
+
+
+    ///DRONES GENERATION
+
     pub fn create_drones(&mut self, config_drone : Vec<Drone>, controller: &mut SimulationController, to_contr_event: Sender<DroneEvent>) {
-        for (i,drone) in config_drone.into_iter().enumerate() {
+        for drone in config_drone {
 
             //Adding channel to controller
             let (to_drone_command_sender,drone_get_command_recv) = unbounded();
@@ -96,17 +106,20 @@ impl NetworkInit {
 
             //Creating Drone
             thread::spawn(move || {
-                let mut drone = SimulationController::create_drone(
+                let mut drone = controller.create_drone(
                     drone.id,
                     copy_contr_event,
                     drone_get_command_recv,
                     packet_receiver,
                     HashMap::new(),
                     drone.pdr);
+
                 drone.run();
             });
         }
     }
+
+    ///CLIENTS GENERATION
 
     fn create_clients(&mut self, config_client: Vec<Client>, controller: &mut SimulationController, to_contr_event: Sender<ClientEvent> ) {
         for client in config_client {
@@ -131,6 +144,9 @@ impl NetworkInit {
             });
         }
     }
+
+    /// SERVERS GENERATION
+
     fn create_servers(&mut self, config_server: Vec<Server>, controller: &mut SimulationController, to_contr_event: Sender<ServerEvent> ) {
         for server in config_server {
             let (to_server_command_sender, server_get_command_recv):(Sender<ServerCommand>,Receiver<ServerCommand>) = unbounded();
@@ -155,7 +171,6 @@ impl NetworkInit {
                     server_get_command_recv,
                     packet_receiver,
                     HashMap::new(),
-                    Vec::new(),
                 );
 
                 server.run();
@@ -163,6 +178,8 @@ impl NetworkInit {
 
         }
     }
+
+    ///CREATING NETWORK
 
     fn connect_nodes(&self, controller: &mut SimulationController, neighbours: HashMap<NodeId, Vec<NodeId>>) {
         for (node_id, connected_node_ids) in neighbours.iter() {
@@ -177,7 +194,7 @@ impl NetworkInit {
                         controller.add_sender(*node_id, NodeType::Client,connected_node_id, sender),
                     
                     Some((NodeType::Server, sender)) =>
-                        controller.add_sender(*node_id, NodeType::Server,connected_node_id, sender),
+                        controller.add_sender(*node_id, NodeType::Server, connected_node_id, sender),
                     
                     None => panic!("Sender channel not found for node {}!", *node_id),
                 };
