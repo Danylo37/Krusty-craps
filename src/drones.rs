@@ -246,7 +246,7 @@ impl KrustyCrapDrone {
                 self.send_to_next_hop(response);
             }
         } else {
-            eprintln!("Unexpected error");
+            eprintln!("There's no previous node in the flood path. Path is incorrect");
         }
     }
 
@@ -293,12 +293,9 @@ impl KrustyCrapDrone {
     fn handle_flood_response(
         &mut self,
         flood_response: FloodResponse,
-        mut routing_header: SourceRoutingHeader,
+        routing_header: SourceRoutingHeader,
         session_id: u64)
     {
-        // Increment the hop index in the routing header to reflect progress through the route
-        routing_header.increase_hop_index();
-
         // Create a new FloodResponse packet with an updated routing header
         let packet = Packet::new_flood_response(routing_header.clone(), session_id, flood_response.clone());
 
@@ -357,8 +354,8 @@ impl KrustyCrapDrone {
         if self.controller_send.send(DroneEvent::ControllerShortcut(packet.clone())).is_err() {
             eprintln!("Error sending packet through controller");
         }
-        // Send the 'PacketSent' event to the simulation controller
-        self.send_event(DroneEvent::PacketSent(packet));
+        // Send the 'ControllerShortcut' event to the simulation controller
+        self.send_event(DroneEvent::ControllerShortcut(packet));
     }
 
     fn send_event(&self, event: DroneEvent) {
