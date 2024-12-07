@@ -114,7 +114,9 @@ impl NetworkInit {
                     HashMap::new(),
                     drone.pdr);
 
-                drone.run();
+                if Ok(drone) {
+                    drone.run();
+                }
             });
         }
     }
