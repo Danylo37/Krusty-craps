@@ -3,7 +3,7 @@
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
-use std::hash::Hash;
+
 use wg_2024::{
     network::{NodeId, SourceRoutingHeader},
     packet::{
@@ -133,7 +133,14 @@ impl Server {
         }
     }
     fn handle_flood_request(&mut self, flood_request: FloodRequest, session_id: u64) {}
+
+    fn handle_flood_response(&self, p0: FloodResponse, p1: u64) {
+        todo!()
+    }
+
     fn send_flood_response() {}
+
+
 
     ///NACK
     fn handle_nack(&mut self, nack: Nack) {}
@@ -146,7 +153,10 @@ impl Server {
     fn handle_ack(&mut self, _ack: Ack) {
         todo!()
     }
-    fn send_ack() {}
+
+    fn send_ack(&self, p0: Ack, p1: SourceRoutingHeader, p2: u64) {
+        todo!()
+    }
 
     ///PACKET
     fn create_packet(
@@ -311,6 +321,7 @@ impl Server {
         self.send_fragments(id_fragment, session_id, n_fragments, response_in_vec_bytes, header);
 
     }
+
 }
 
 impl CommunicationServer for Server {
