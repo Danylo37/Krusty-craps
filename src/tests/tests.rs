@@ -1,6 +1,8 @@
 use wg_2024::tests::{generic_fragment_forward, generic_fragment_drop};
-use crate::tests::test_fragments::generic_chain_fragment_drop;
-use crate::tests::test_flooding::generic_flood_request_forward;
+use crate::tests::{
+    test_fragments::generic_chain_fragment_drop,
+    test_flooding::generic_flood_request_forward
+};
 use crate::drones::KrustyCrapDrone;
 
 #[cfg(test)]
