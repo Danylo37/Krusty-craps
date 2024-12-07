@@ -322,6 +322,17 @@ impl Server {
 
     }
 
+    fn generate_unique_flood_id(&self) -> u64 {
+        1
+    }
+
+    fn generate_unique_session_id(&self) -> u64 {
+        1
+    }
+
+    fn find_path_to(&self, destination_id: NodeId) -> Vec<NodeId> {
+        vec![self.id, 1, 2, destination_id]
+    }
 }
 
 impl CommunicationServer for Server {
