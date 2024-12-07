@@ -252,7 +252,7 @@ impl KrustyCrapDrone {
 
     fn get_prev_node_id(&self, path_trace: &Vec<(NodeId, NodeType)>) -> Option<NodeId> {
         if path_trace.len() > 1 {
-            Some(path_trace[path_trace.len() - 2].0);
+            return Some(path_trace[path_trace.len() - 2].0);
         }
         None
     }
