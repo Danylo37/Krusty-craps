@@ -23,7 +23,7 @@ pub struct NetworkInit {
 }
 
 impl NetworkInit {
-    pub fn new(input: &str) -> NetworkInit {
+    pub fn new() -> NetworkInit {
         NetworkInit {
             drone_sender_channels: HashMap::new(),
             clients_sender_channels: HashMap::new(),
