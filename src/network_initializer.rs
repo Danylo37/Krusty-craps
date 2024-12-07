@@ -185,7 +185,7 @@ impl NetworkInit {
         for (node_id, connected_node_ids) in neighbours.iter() {
             for &connected_node_id in connected_node_ids {
                 // Retrieve the Sender channel based on node type
-                let sender_channel = match self.get_sender_for_node(*node_id) {
+                match self.get_sender_for_node(*node_id) {
                     Some((NodeType::Drone, sender)) =>
                         // Use the 'controller' to establish the connection
                         controller.add_sender(*node_id, NodeType::Drone,connected_node_id, sender),
