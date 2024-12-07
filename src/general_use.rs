@@ -2,7 +2,6 @@
 
 use crossbeam_channel::Sender;
 use serde::{Deserialize, Serialize};
-use serde_json;
 
 use wg_2024::{
     packet::Packet,
@@ -59,7 +58,7 @@ pub enum Response{
 }
 
 ///Material
-#[derive(Deserialize, Serialize, Copy, Debug)]
+#[derive(Deserialize, Serialize, Copy, Clone, Debug)]
 pub enum ServerType{
     Communication,
     Content,
@@ -70,3 +69,4 @@ pub enum ServerType{
 pub struct Message{
     text: String,
 }
+
