@@ -8,7 +8,7 @@ use wg_2024::{
     controller::{DroneEvent},
     network::NodeId,
 };
-
+use wg_2024::drone::Drone as TraitDrone;
 use crate::drones::KrustyCrapDrone;
 use crate::server;
 use crate::clients;
@@ -30,13 +30,16 @@ impl NetworkInit {
             servers_sender_channels: HashMap::new(),
         }
     }
-    fn parse(&mut self, input: &str){
+    pub fn parse(&mut self, input: &str){
 
         //Deserializing the TOML file
+
+        println!("ciao");
         let config_data =
-            fs::read_to_string("examples/config/input.toml").expect("Unable to read config file");
+            fs::read_to_string(input).expect("Unable to read config file");
         let config: Config = toml::from_str(&config_data).expect("Unable to parse TOML");
 
+        println!("ciao");
         //Splitting information - getting data about neighbours
         let mut neighbours: HashMap<NodeId, Vec<NodeId>> = HashMap::new();
         for drone in &config.drone{
@@ -48,7 +51,7 @@ impl NetworkInit {
         for drone in &config.drone{
             neighbours.insert(drone.id, drone.connected_node_ids.clone());
         }
-
+        println!("ciao");
         //Creating the channels for sending Events to Controller (For Drones, Clients and Servers)
         let (to_control_event_drone, control_get_event_drone) = unbounded();
         let (to_control_event_client, control_get_event_client) = unbounded();
@@ -83,6 +86,7 @@ impl NetworkInit {
 
     /// UI
     pub fn start_ui(){
+        println!("Starting UI");
         interface();
     }
 
@@ -106,19 +110,20 @@ impl NetworkInit {
             let copy_contr_event = to_contr_event.clone();
 
             //Creating Drone
+            let mut drone = controller.create_drone::<KrustyCrapDrone>(
+                drone.id,
+                copy_contr_event,
+                drone_get_command_recv,
+                packet_receiver,
+                HashMap::new(),
+                drone.pdr);
+
             thread::spawn(move || {
-                let mut drone = controller.create_drone::<KrustyCrapDrone>(
-                    drone.id,
-                    copy_contr_event,
-                    drone_get_command_recv,
-                    packet_receiver,
-                    HashMap::new(),
-                    drone.pdr);
 
                 match drone {
                     Ok(mut drone) => drone.run(),
                     Err(e) => panic!("{}",e),
-                }
+                }1
             });
         }
     }
