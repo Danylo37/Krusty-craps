@@ -9,6 +9,7 @@ mod general_use;
 
 //Test
 mod tests;
+mod ui;
 
 //Usages
 use crate::network_initializer::NetworkInit;
