@@ -14,7 +14,6 @@ pub struct SimulationState {
     pub nodes: HashMap<NodeId, NodeType>,
     pub topology: HashMap<NodeId, Vec<NodeId>>,
     pub packet_history: Vec<PacketInfo>,
-    available_drone_types: Vec<String>,  // Store available drone types
 }
 
 
@@ -29,45 +28,43 @@ pub struct PacketInfo {
 
 pub struct SimulationController {
     pub state: SimulationState,
+    pub drone_event_sender: Sender<DroneEvent>,
     pub drone_event_receiver: Receiver<DroneEvent>,
+    pub client_event_sender: Sender<ClientEvent>,
     pub client_event_receiver: Receiver<ClientEvent>,
+    pub server_event_sender: Sender<ServerEvent>,
     pub server_event_receiver: Receiver<ServerEvent>,
     pub command_senders_drones: HashMap<NodeId, Sender<DroneCommand>>,
     pub command_senders_clients: HashMap<NodeId, Sender<ClientCommand>>,
     pub command_senders_servers: HashMap<NodeId, Sender<ServerCommand>>,
-    pub drone_event_sender: Sender<DroneEvent>,
-    pub client_event_sender: Sender<ClientEvent>,
-    pub server_event_sender: Sender<ServerEvent>,
     pub packet_senders: HashMap<NodeId, Sender<Packet>>,
 }
 
 
 impl SimulationController {
     pub fn new(
-        drone_event_receiver: Receiver<DroneEvent>,
-        client_event_receiver: Receiver<ClientEvent>,
-        server_event_receiver: Receiver<ServerEvent>,
         drone_event_sender: Sender<DroneEvent>,
+        drone_event_receiver: Receiver<DroneEvent>,
         client_event_sender: Sender<ClientEvent>,
+        client_event_receiver: Receiver<ClientEvent>,
         server_event_sender: Sender<ServerEvent>,
-        available_drone_types: Vec<String>,
+        server_event_receiver: Receiver<ServerEvent>,
     ) -> Self {
         Self {
             state: SimulationState {
                 nodes: HashMap::new(),
                 topology: HashMap::new(),
                 packet_history: Vec::new(),
-                available_drone_types, // Initialize available drone types
             },
-            drone_event_receiver,
             command_senders_drones: HashMap::new(),
-            client_event_receiver,
             command_senders_clients: HashMap::new(),
-            server_event_receiver,
             command_senders_servers: HashMap::new(),
             drone_event_sender,
+            drone_event_receiver,
             client_event_sender,
+            client_event_receiver,
             server_event_sender,
+            server_event_receiver,
             packet_senders: HashMap::new(),
         }
     }
@@ -100,28 +97,24 @@ impl SimulationController {
     /// Spawns a new drone.
     pub fn create_drone<T: Drone + Send + 'static>(&mut self,
         drone_id: NodeId,
+        event_sender: Sender<DroneEvent>,
         command_receiver: Receiver<DroneCommand>,
         packet_receiver: Receiver<Packet>,
-        connected_nodes: Vec<NodeId>,
+        connected_nodes: HashMap<NodeId, Sender<Packet>>,
         pdr: f32,
     ) -> Result<T, String> {
 
-        let drone_type_name = self.state.available_drone_types.pop().unwrap_or_else(|| {
-            println!("No more specific drone types available. Using default.");
-            "default_drone".to_string()
-        });
+        let drone = T::new(
+            drone_id,
+            self.drone_event_sender.clone(),
+            command_receiver,
+            packet_receiver,
+            connected_nodes,
+            pdr,
+        );
 
-        let packet_senders: HashMap<NodeId, Sender<Packet>> = connected_nodes
-            .into_iter()
-            .filter_map(|id| self.packet_senders.get(&id).cloned().map(|sender| (id, sender)))
-            .collect();
-
-        let drone: Result<T, String> = match drone_type_name.as_str() {
-            "KrustyCrapDrone" => Ok(T::new(drone_id, self.drone_event_sender.clone(), command_receiver, packet_receiver, packet_senders, pdr)), // Use self.drone_event_sender
-            _ => Err(format!("Unknown drone type: {}", drone_type_name)),
-        };
-
-        drone // Result
+        // Return the result of drone creation (which might be an error)
+        Ok(drone)
     }
 
 

@@ -1,4 +1,4 @@
-mod client_chen;
+pub mod client_chen;
 mod client_danylo;
 
 pub use client_chen::*;

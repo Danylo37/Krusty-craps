@@ -5,9 +5,10 @@ use crossbeam_channel::*;
 use wg_2024::{
     packet::{Packet, NodeType},
     config::{Config,Drone,Server,Client},
-    controller::{DroneEvent, DroneCommand},
+    controller::{DroneEvent},
     network::NodeId,
 };
+
 use crate::drones::KrustyCrapDrone;
 use crate::server;
 use crate::clients;
@@ -106,7 +107,7 @@ impl NetworkInit {
 
             //Creating Drone
             thread::spawn(move || {
-                let mut drone = controller.create_drone(
+                let mut drone = controller.create_drone::<KrustyCrapDrone>(
                     drone.id,
                     copy_contr_event,
                     drone_get_command_recv,
@@ -114,7 +115,10 @@ impl NetworkInit {
                     HashMap::new(),
                     drone.pdr);
 
-                drone.run();
+                match drone {
+                    Ok(mut drone) => drone.run(),
+                    Err(e) => panic!("{}",e),
+                }
             });
         }
     }
@@ -185,7 +189,7 @@ impl NetworkInit {
         for (node_id, connected_node_ids) in neighbours.iter() {
             for &connected_node_id in connected_node_ids {
                 // Retrieve the Sender channel based on node type
-                let sender_channel = match self.get_sender_for_node(*node_id) {
+                match self.get_sender_for_node(*node_id) {
                     Some((NodeType::Drone, sender)) =>
                         // Use the 'controller' to establish the connection
                         controller.add_sender(*node_id, NodeType::Drone,connected_node_id, sender),
