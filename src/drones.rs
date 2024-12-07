@@ -178,8 +178,7 @@ impl KrustyCrapDrone {
             return;
         }
 
-        // Send the Ack to the sender and the 'PacketSent' event to the simulation controller
-        self.send_ack(fragment.fragment_index, routing_header, session_id);
+        // Send the 'PacketSent' event to the simulation controller
         self.send_event(DroneEvent::PacketSent(packet));
     }
 
@@ -203,22 +202,6 @@ impl KrustyCrapDrone {
 
         // Send the packet to the next hop
         self.send_to_next_hop(nack_packet);
-    }
-
-    fn send_ack(&self, fragment_index: u64, mut routing_header: SourceRoutingHeader, session_id: u64) {
-        // Truncate the hops in the routing header up to the current hop index + 1, to include current hop
-        // This effectively shortens the route, as we're sending the Ack back along the path
-        routing_header.hops.truncate(routing_header.hop_index + 1);
-        // Reverse the routing header to indicate the Ack should go backward in the route
-        routing_header.hops.reverse();
-        // Reset the hop index to 0
-        routing_header.hop_index = 0;
-
-        // Create an Ack packet
-        let ack_packet = Packet::new_ack(routing_header.clone(), session_id, fragment_index);
-
-        // Send the packet to the next hop
-        self.send_to_next_hop(ack_packet);
     }
 
     fn handle_flood_request(&mut self, mut flood_request: FloodRequest, session_id: u64) {
