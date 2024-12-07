@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::{fs, thread};
+use std::{env, fs, thread};
 use crossbeam_channel::*;
 
 use wg_2024::{
@@ -35,6 +35,7 @@ impl NetworkInit {
         //Deserializing the TOML file
 
         println!("ciao");
+        println!("{:?}",env::current_dir().expect("Failed to get current directory"));
         let config_data =
             fs::read_to_string(input).expect("Unable to read config file");
         let config: Config = toml::from_str(&config_data).expect("Unable to parse TOML");
