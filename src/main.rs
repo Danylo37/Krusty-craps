@@ -9,11 +9,12 @@ mod general_use;
 mod ui;
 //Test
 mod tests;
-mod ui;
 
 //Usages
 use crate::network_initializer::NetworkInit;
 
 fn main() {
-    let myNet = NetworkInit::new("input.toml");
+    println!("Hello, world!");
+    let mut myNet = NetworkInit::new();
+    myNet.parse("input.toml")
 }
