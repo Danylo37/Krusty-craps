@@ -93,12 +93,9 @@ impl KrustyCrapDrone {
     fn handle_nack(
         &mut self,
         nack: Nack,
-        mut routing_header: SourceRoutingHeader,
+        routing_header: SourceRoutingHeader,
         session_id: u64)
     {
-        // Increment the hop index in the routing header to reflect progress through the route
-        routing_header.increase_hop_index();
-
         // Create a new Nack packet using the updated routing header
         let packet = Packet::new_nack(routing_header, session_id, nack);
 
@@ -109,12 +106,9 @@ impl KrustyCrapDrone {
     fn handle_ack(
         &mut self,
         ack: Ack,
-        mut routing_header: SourceRoutingHeader,
+        routing_header: SourceRoutingHeader,
         session_id: u64)
     {
-        // Increment the hop index in the routing header to reflect progress through the route
-        routing_header.increase_hop_index();
-
         // Create a new Ack packet using the updated routing header
         let packet = Packet::new_ack(routing_header, session_id, ack.fragment_index);
 
@@ -125,7 +119,7 @@ impl KrustyCrapDrone {
     fn handle_fragment(
         &mut self,
         fragment: Fragment,
-        mut routing_header:
+        routing_header:
         SourceRoutingHeader,
         session_id: u64)
     {
@@ -162,11 +156,8 @@ impl KrustyCrapDrone {
             return;
         };
 
-        // Increment the hop index in the routing header to reflect progress through the route
-        routing_header.increase_hop_index();
-
         // Create a new Fragment packet using the updated routing header, session ID and fragment
-        let packet = Packet::new_fragment(routing_header.clone(), session_id, fragment.clone());
+        let mut packet = Packet::new_fragment(routing_header.clone(), session_id, fragment.clone());
 
         // Simulate packet drop based on the PDR
         // If the random number is less than PDR, drop the packet (send a Nack 'Dropped')
@@ -177,6 +168,9 @@ impl KrustyCrapDrone {
             return;
         }
 
+        // Increment the hop index in the routing header to reflect progress through the route
+        packet.routing_header.increase_hop_index();
+
         // Attempt to send the updated fragment packet to the next hop
         // If there is an error, send the packet through the simulation controller
         if sender.send(packet.clone()).is_err() {
@@ -184,7 +178,8 @@ impl KrustyCrapDrone {
             return;
         }
 
-        // Send the 'PacketSent' event to the simulation controller
+        // Send the Ack to the sender and the 'PacketSent' event to the simulation controller
+        self.send_ack(fragment.fragment_index, routing_header, session_id);
         self.send_event(DroneEvent::PacketSent(packet));
     }
 
@@ -195,19 +190,35 @@ impl KrustyCrapDrone {
             nack_type,
         };
 
-        // Truncate the hops in the routing header up to the current hop index + 1
+        // Truncate the hops in the routing header up to the current hop index + 1, to include current hop
         // This effectively shortens the route, as we're sending the Nack back along the path
         routing_header.hops.truncate(routing_header.hop_index + 1);
         // Reverse the routing header to indicate the Nack should go backward in the route
-        routing_header.reverse();
-        // Reset the hop index to 1
-        routing_header.hop_index = 1;
+        routing_header.hops.reverse();
+        // Reset the hop index to 0
+        routing_header.hop_index = 0;
 
         // Create a Nack packet
-        let nack_packet = Packet::new_nack(routing_header, session_id, nack);
+        let nack_packet = Packet::new_nack(routing_header.clone(), session_id, nack);
 
         // Send the packet to the next hop
-        self.send_to_next_hop(nack_packet.clone());
+        self.send_to_next_hop(nack_packet);
+    }
+
+    fn send_ack(&self, fragment_index: u64, mut routing_header: SourceRoutingHeader, session_id: u64) {
+        // Truncate the hops in the routing header up to the current hop index + 1, to include current hop
+        // This effectively shortens the route, as we're sending the Ack back along the path
+        routing_header.hops.truncate(routing_header.hop_index + 1);
+        // Reverse the routing header to indicate the Ack should go backward in the route
+        routing_header.hops.reverse();
+        // Reset the hop index to 0
+        routing_header.hop_index = 0;
+
+        // Create an Ack packet
+        let ack_packet = Packet::new_ack(routing_header.clone(), session_id, fragment_index);
+
+        // Send the packet to the next hop
+        self.send_to_next_hop(ack_packet);
     }
 
     fn handle_flood_request(&mut self, mut flood_request: FloodRequest, session_id: u64) {
@@ -336,13 +347,16 @@ impl KrustyCrapDrone {
         self.packet_send.get(&next_hop_id)
     }
 
-    fn send_to_next_hop(&self, packet: Packet) {
+    fn send_to_next_hop(&self, mut packet: Packet) {
         // Attempt to find the sender for the next hop
         // If there is an error, send the packet through the simulation controller
         let Some(sender) = self.get_sender_of_next(packet.routing_header.clone()) else {
             self.send_through_controller(packet.clone());
             return;
         };
+
+        // Increment the hop index in the routing header to reflect progress through the route
+        packet.routing_header.increase_hop_index();
 
         // Attempt to send the updated fragment packet to the next hop
         // If there is an error, send the packet through the simulation controller
@@ -357,7 +371,9 @@ impl KrustyCrapDrone {
 
     fn send_through_controller(&self, packet: Packet) {
         // Send the packet through the simulation controller
-        self.controller_send.send(DroneEvent::ControllerShortcut(packet.clone())).expect("Unexpected error");
+        if self.controller_send.send(DroneEvent::ControllerShortcut(packet.clone())).is_err() {
+            eprintln!("Error sending packet through controller");
+        }
         // Send the 'PacketSent' event to the simulation controller
         self.send_event(DroneEvent::PacketSent(packet));
     }
@@ -365,13 +381,19 @@ impl KrustyCrapDrone {
     fn send_event(&self, event: DroneEvent) {
         match event {
             DroneEvent::PacketSent(packet) => {
-                self.controller_send.send(DroneEvent::PacketSent(packet)).expect("Unexpected error");
+                if self.controller_send.send(DroneEvent::PacketSent(packet)).is_err() {
+                    eprintln!("Error sending 'PacketSent' event to controller");
+                }
             }
             DroneEvent::PacketDropped(packet) => {
-                self.controller_send.send(DroneEvent::PacketDropped(packet)).expect("Unexpected error");
+                if self.controller_send.send(DroneEvent::PacketDropped(packet)).is_err() {
+                    eprintln!("Error sending 'PacketDropped' event to controller");
+                }
             }
             DroneEvent::ControllerShortcut(packet) => {
-                self.controller_send.send(DroneEvent::ControllerShortcut(packet)).expect("Unexpected error");
+                if self.controller_send.send(DroneEvent::ControllerShortcut(packet)).is_err() {
+                    eprintln!("Error sending 'ControllerShortcut' event to controller");
+                }
             }
         }
     }
