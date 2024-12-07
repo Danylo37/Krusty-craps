@@ -357,9 +357,7 @@ impl KrustyCrapDrone {
 
     fn send_through_controller(&self, packet: Packet) {
         // Send the packet through the simulation controller
-        if self.controller_send.send(DroneEvent::ControllerShortcut(packet.clone())).is_err() {
-            eprintln!("Unexpected error");
-        }
+        self.controller_send.send(DroneEvent::ControllerShortcut(packet.clone())).expect("Unexpected error");
         // Send the 'PacketSent' event to the simulation controller
         self.send_event(DroneEvent::PacketSent(packet));
     }
@@ -367,19 +365,13 @@ impl KrustyCrapDrone {
     fn send_event(&self, event: DroneEvent) {
         match event {
             DroneEvent::PacketSent(packet) => {
-                if self.controller_send.send(DroneEvent::PacketSent(packet)).is_err() {
-                    eprintln!("Unexpected error");
-                }
+                self.controller_send.send(DroneEvent::PacketSent(packet)).expect("Unexpected error");
             }
             DroneEvent::PacketDropped(packet) => {
-                if self.controller_send.send(DroneEvent::PacketDropped(packet)).is_err() {
-                    eprintln!("Unexpected error");
-                }
+                self.controller_send.send(DroneEvent::PacketDropped(packet)).expect("Unexpected error");
             }
             DroneEvent::ControllerShortcut(packet) => {
-                if self.controller_send.send(DroneEvent::ControllerShortcut(packet)).is_err() {
-                    eprintln!("Unexpected error");
-                }
+                self.controller_send.send(DroneEvent::ControllerShortcut(packet)).expect("Unexpected error");
             }
         }
     }
