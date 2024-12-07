@@ -1,18 +1,20 @@
-//I think i know quite good now
+//I am quite good now
 
-use std::collections::{HashMap, HashSet};
 use crossbeam_channel::{select_biased, Receiver, Sender};
+use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
-
+use std::hash::Hash;
 use wg_2024::{
-    network::{NodeId,SourceRoutingHeader},
-    packet::{Ack, FloodRequest, FloodResponse, Fragment, Nack, NackType, NodeType, Packet, PacketType},
+    network::{NodeId, SourceRoutingHeader},
+    packet::{
+        Ack, FloodRequest, FloodResponse, Fragment, Nack, NackType, NodeType, Packet, PacketType,
+    },
 };
 
-use crate::general_use::{ServerCommand, ServerEvent, Message, ServerType};
+use crate::general_use::{Message, Query, Response, ServerCommand, ServerEvent, ServerType};
 
 #[derive(Debug)]
-pub struct Server{
+pub struct Server {
     //Basic data
     pub id: NodeId,
     pub server_type: ServerType,
@@ -26,8 +28,8 @@ pub struct Server{
     pub packet_send: HashMap<NodeId, Sender<Packet>>,
 
     //Server data
-    pub list_users: Vec<NodeId>,
-    pub reassembling_messages: HashMap<u64,Vec<u8>>,
+    pub list_users: HashMap<String, NodeId>,
+    pub reassembling_messages: HashMap<u64, Vec<u8>>,
     pub messages: Vec<Message>,
 }
 
@@ -45,35 +47,27 @@ pub struct Server{
 // reassemble_fragment
 // send_back_type
 
-
-
 ///Communication Server functions
-pub trait CommunicationServer{
-    fn add_user(&mut self, client_id: NodeId);
-    fn get_list(&self) -> Vec<NodeId>;
-    fn forward_list(&self);
-    fn get_message();
-    fn forward_message();
-    fn forward_content();
+pub trait CommunicationServer {
+    fn add_client(&mut self, nickname: String, client_id: NodeId);
+    fn give_list_back(&self, client_id: NodeId);
+    fn forward_message_to(&self, nickname: String, message: Message);
 }
 
 ///Content Server functions
-pub trait ContentServer{
+pub trait ContentServer {}
 
-}
-
-impl Server{
+impl Server {
     pub fn new(
-            id: NodeId,
-            server_type: ServerType,
-            connected_drone_ids: Vec<NodeId>,
-            to_controller_event: Sender<ServerEvent>,
-            from_controller_command: Receiver<ServerCommand>,
-            packet_recv: Receiver<Packet>,
-            packet_send: HashMap<NodeId, Sender<Packet>>,
-            list_users: Vec<NodeId>,
-    ) -> Self{
-        Server{
+        id: NodeId,
+        server_type: ServerType,
+        connected_drone_ids: Vec<NodeId>,
+        to_controller_event: Sender<ServerEvent>,
+        from_controller_command: Receiver<ServerCommand>,
+        packet_recv: Receiver<Packet>,
+        packet_send: HashMap<NodeId, Sender<Packet>>,
+    ) -> Self {
+        Server {
             id,
             server_type,
             connected_drone_ids,
@@ -81,7 +75,7 @@ impl Server{
             from_controller_command,
             packet_recv,
             packet_send,
-            list_users,
+            list_users: HashMap::new(),
             flood_ids: Default::default(),
             reassembling_messages: Default::default(),
             messages: Vec::new(),
@@ -118,8 +112,8 @@ impl Server{
         }
     }
 
-    pub fn discovery(&self){
-
+    ///FLOOD
+    pub fn discovery(&self) {
         let flood_request = FloodRequest::initialize(
             self.generate_unique_flood_id(), // Replace with your ID generation
             self.id,
@@ -133,47 +127,49 @@ impl Server{
         );
 
         for sender in self.packet_send.values() {
-
             if let Err(e) = sender.send(packet.clone()) {
                 eprintln!("Failed to send FloodRequest: {:?}", e);
             }
         }
     }
-
     fn handle_flood_request(&mut self, flood_request: FloodRequest, session_id: u64) {}
-    fn send_flood_response(){}
+    fn send_flood_response() {}
 
+    ///NACK
     fn handle_nack(&mut self, nack: Nack) {}
 
     fn send_nack(&self, p0: Nack, p1: SourceRoutingHeader, p2: u64) {
         todo!()
     }
 
+    ///ACK
     fn handle_ack(&mut self, _ack: Ack) {
         todo!()
     }
-    fn send_ack(){}
+    fn send_ack() {}
 
-    pub fn give_type_back(&self){
-        let server_type = self.server_type;
-        let server_type_string = serde_json::to_string(&server_type).unwrap();
-        let n_fragments = server_type_string.clone().as_bytes().len();
-        let fragment = Fragment::from_string(0, n_fragments as u64, server_type_string);
-        Self::send_message(Self::create_message(PacketType::MsgFragment(fragment), Vec::new(), 0));
-    }
-
-    //Handling messages?
-    fn create_message(pack_type: PacketType, route: Vec<NodeId>, session_id: u64 )->Packet{
-        Packet{
+    ///PACKET
+    fn create_packet(
+        pack_type: PacketType,
+        routing_header: SourceRoutingHeader,
+        session_id: u64,
+    ) -> Packet {
+        Packet {
             pack_type,
-            routing_header: Self::create_source_routing(route),
+            routing_header,
             session_id,
         }
-        // Remember fragment.from_string()
     }
 
-    fn send_message(packet0: Packet){}
+    fn send_packet(&self, packet: Packet) {
+        let first_carrier = self
+            .packet_send
+            .get(&packet.routing_header.hops[1])
+            .unwrap();
+        first_carrier.send(packet).unwrap();
+    }
 
+    ///HEADER
     fn create_source_routing(route: Vec<NodeId>) -> SourceRoutingHeader {
         SourceRoutingHeader {
             hop_index: 1,
@@ -181,8 +177,39 @@ impl Server{
         }
     }
 
-    fn handle_fragment(&mut self, fragment: Fragment, routing_header: SourceRoutingHeader, session_id: u64) {
-        // 1. Packet Verification
+    ///FRAGMENT
+
+    pub fn send_fragments(&self, id_fragment: u64, session_id: u64, n_fragments: usize, response_in_vec_bytes: &[u8], header: SourceRoutingHeader) {
+
+        for i in 0..n_fragments{
+
+            //Preparing data of fragment
+            let data:[u8;128] = response_in_vec_bytes[i*128..(1+i)*128].try_into().unwrap();
+
+            //Generating fragment
+            let fragment = Fragment::new(
+                id_fragment,
+                n_fragments as u64,
+                data,
+            );
+
+            //Generating packet
+            let packet = Self::create_packet(
+                PacketType::MsgFragment(fragment),
+                header.clone(),
+                session_id,
+            );
+
+            self.send_packet(packet);
+        }
+    }
+    fn handle_fragment(
+        &mut self,
+        fragment: Fragment,
+        routing_header: SourceRoutingHeader,
+        session_id: u64,
+    ) {
+        // Packet Verification
         if self.id != routing_header.hops[routing_header.hop_index] {
             // Send Nack (UnexpectedRecipient)
             let nack = Nack {
@@ -193,16 +220,15 @@ impl Server{
             return;
         }
 
-        // 2. Fragment Reassembly
-        let message_key = (session_id, routing_header.hops); // Assuming src_id is the first hop
-
-        // Entry for this message exists?
-        if let Some(reassembling_message) = self.reassembling_messages.get_mut(&message_key.0) {
+        ///Fragment reassembly
+        // Check if it exists already
+        if let Some(reassembling_message) = self.reassembling_messages.get_mut(&session_id) {
             let offset = fragment.fragment_index as usize * 128;
 
             // Check for valid fragment index and length
             if offset + fragment.length as usize > reassembling_message.capacity()
-                || fragment.length as usize > 128 && fragment.fragment_index != fragment.total_n_fragments - 1
+                || fragment.length as usize > 128
+                    && fragment.fragment_index != fragment.total_n_fragments - 1
             {
                 // Send Nack and potentially clear the reassembling message
                 // ... error handling logic ...
@@ -210,62 +236,144 @@ impl Server{
             }
 
             // Copy data to the correct offset in the vector.
-            reassembling_message[offset..offset + fragment.length as usize].copy_from_slice(&fragment.data[..fragment.length as usize]);
+            reassembling_message[offset..offset + fragment.length as usize]
+                .copy_from_slice(&fragment.data[..fragment.length as usize]);
 
             // Check if all fragments have been received
             if reassembling_message.len() == reassembling_message.capacity() {
-                // Message reassembled!
-                // 3. Message Processing
+                /// Message reassembled!
+                // Message Processing
                 let reassembled_data = reassembling_message.clone(); // Take ownership of the data
-                self.reassembling_messages.remove(&message_key.0); // Remove from map
-                self.process_reassembled_message(reassembled_data, session_id, routing_header.hops.clone());
+                self.reassembling_messages.remove(&session_id); // Remove from map
+                self.process_reassembled_message(reassembled_data, routing_header.hops[0]);
 
                 // Send Ack
-                let ack = Ack { fragment_index: fragment.fragment_index };
+                let ack = Ack {
+                    fragment_index: fragment.fragment_index,
+                };
                 self.send_ack(ack, routing_header.get_reversed(), session_id);
             }
         } else {
             // New message, create a new entry in the HashMap.
             let mut reassembling_message = vec![0; fragment.total_n_fragments as usize * 128];
-            reassembling_message[0..fragment.length as usize].copy_from_slice(&fragment.data[..fragment.length as usize]);
-            self.reassembling_messages.insert(message_key, reassembling_message);
+            reassembling_message[0..fragment.length as usize]
+                .copy_from_slice(&fragment.data[..fragment.length as usize]);
+            self.reassembling_messages
+                .insert(session_id, reassembling_message);
         }
     }
 
-    fn process_reassembled_message(&mut self, data: Vec<u8>, session_id: u64, src_id: Vec<NodeId>) {
-        match String::from_utf8(data){
-            Result::Ok(data_string) => {
-                match serde_json::from_str(&data_string) {
-                    Result::Ok(Message) => self.messages.push(Message),
-                    Result::Err(_) => {panic!("Damn, not the right struct")}
+    fn process_reassembled_message(&mut self, data: Vec<u8>, src_id: NodeId) {
+        match String::from_utf8(data.clone()) {
+            Ok(data_string) => match serde_json::from_str(&data_string) {
+                Ok(Query::AskType) => self.give_type_back(src_id),
+                Ok(Query::AddClient(nickname, node_id)) => self.add_client(nickname, node_id),
+                Ok(Query::AskListClients) => self.give_list_back(src_id),
+                Ok(Query::SendMessageTo(nickname, message)) => {
+                    self.forward_message_to(nickname, message)
                 }
-            }
-            Result::Err(e) => println!("Dio porco, {:?}", e),
+                Err(_) => {
+                    panic!("Damn, not the right struct")
+                }
+                _ => {}
+            },
+            Err(e) => println!("Dio porco, {:?}", e),
         }
         println!("We did it");
     }
+
+    ///Common functions
+    pub fn give_type_back(&self, src_id: NodeId) {
+
+        //Get data
+        let server_type = self.server_type;
+
+        //Serializing type
+        let response_as_string = serde_json::to_string(&server_type).unwrap();
+        let response_in_vec_bytes = response_as_string.as_bytes();
+        let length_response = response_in_vec_bytes.len();
+
+        //Counting fragments
+        let mut n_fragments = length_response / 128+1;
+        if n_fragments == 0 {
+            n_fragments -= 1;
+        }
+
+        //Generating header
+        let route = self.find_path_to(src_id);
+        let header = Self::create_source_routing(route); //To fill
+
+        // Generating ids
+        let id_fragment = self.generate_unique_fragment_id();
+        let session_id = self.generate_unique_session_id();
+
+        //Send fragments
+        self.send_fragments(id_fragment, session_id, n_fragments, response_in_vec_bytes, header);
+
+    }
 }
 
-impl CommunicationServer for Server{
-    fn add_user(&mut self, client_id: NodeId) {
-        self.list_users.push(client_id);
+impl CommunicationServer for Server {
+    fn add_client(&mut self, nickname: String, client_id: NodeId) {
+        self.list_users.insert(nickname, client_id);
     }
 
-    fn get_list(&self) -> Vec<NodeId> {
-        self.list_users.clone()
+    fn give_list_back(&self, client_id: NodeId) {
+
+        //Get list
+        let keys_list_clients = self.list_users.keys().cloned().collect();
+
+        //Creating data to send
+        let response = Response::ListUsers(keys_list_clients);
+
+        //Serializing message to send
+        let response_as_string = serde_json::to_string(&response).unwrap();
+        let response_in_vec_bytes = response_as_string.as_bytes();
+        let length_response = response_in_vec_bytes.len();
+
+        //Counting fragments
+        let mut n_fragments = length_response / 128+1;
+        if n_fragments == 0 {
+            n_fragments -= 1;
+        }
+
+        //Generating header
+        let route: Vec<NodeId> = self.find_path_to(client_id); //To implement findpath
+        let header = Self::create_source_routing(route); //To fill
+
+        // Generating ids
+        let id_fragment = self.generate_unique_fragment_id();
+        let session_id = self.generate_unique_session_id();
+
+        //Send fragments
+        self.send_fragments(id_fragment, session_id, n_fragments,response_in_vec_bytes, header);
+
     }
 
-    fn forward_list(&self) {}
+    fn forward_message_to(&self, nickname: String, message: Message) {
 
-    fn get_message() {
-        todo!()
-    }
+        //Creating data to send
+        let response = Response::MessageFrom(nickname.clone(),message);
 
-    fn forward_message() {
-        todo!()
-    }
+        //Serializing message to send
+        let response_as_string = serde_json::to_string(&response).unwrap();
+        let response_in_vec_bytes = response_as_string.as_bytes();
+        let length_response = response_in_vec_bytes.len();
 
-    fn forward_content() {
-        todo!()
+        //Counting fragments
+        let mut n_fragments = length_response / 128+1;
+        if n_fragments == 0 {
+            n_fragments -= 1;
+        }
+
+        //Generating header
+        let route: Vec<NodeId> = self.find_path_to(self.list_users.get(&nickname)); //To implement findpath
+        let header = Self::create_source_routing(route); //To fill
+
+        // Generating fragment
+        let id_fragment = self.generate_unique_fragment_id();
+        let session_id = self.generate_unique_session_id();
+
+        self.send_fragments(id_fragment, session_id, n_fragments,response_in_vec_bytes, header);
     }
 }
