@@ -6,7 +6,7 @@ mod server;
 mod clients;
 mod simulation_controller;
 mod general_use;
-
+mod ui;
 //Test
 mod tests;
 
