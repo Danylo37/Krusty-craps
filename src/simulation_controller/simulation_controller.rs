@@ -14,7 +14,6 @@ pub struct SimulationState {
     pub nodes: HashMap<NodeId, NodeType>,
     pub topology: HashMap<NodeId, Vec<NodeId>>,
     pub packet_history: Vec<PacketInfo>,
-    available_drone_types: Vec<String>,  // Store available drone types
 }
 
 
@@ -50,14 +49,12 @@ impl SimulationController {
         client_event_receiver: Receiver<ClientEvent>,
         server_event_sender: Sender<ServerEvent>,
         server_event_receiver: Receiver<ServerEvent>,
-        available_drone_types: Vec<String>,
     ) -> Self {
         Self {
             state: SimulationState {
                 nodes: HashMap::new(),
                 topology: HashMap::new(),
                 packet_history: Vec::new(),
-                available_drone_types, // Initialize available drone types
             },
             command_senders_drones: HashMap::new(),
             command_senders_clients: HashMap::new(),
@@ -107,23 +104,17 @@ impl SimulationController {
         pdr: f32,
     ) -> Result<T, String> {
 
-        let drone_type_name = self.state.available_drone_types.pop().unwrap_or_else(|| {
-            println!("No more specific drone types available. Using default.");
-            "default_drone".to_string()
-        });
+        let drone = T::new(
+            drone_id,
+            self.drone_event_sender.clone(),
+            command_receiver,
+            packet_receiver,
+            connected_nodes,
+            pdr,
+        );
 
-        let drone: Result<T, String> = match drone_type_name.as_str() {
-            "KrustyCrapDrone" => Ok(T::new(
-                drone_id,
-                self.drone_event_sender.clone(),
-                command_receiver,
-                packet_receiver,
-                connected_nodes,
-                pdr)),
-            _ => Err(format!("Unknown drone type: {}", drone_type_name)),
-        };
-
-        drone // Result
+        // Return the result of drone creation (which might be an error)
+        Ok(drone)
     }
 
 
