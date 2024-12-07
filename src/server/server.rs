@@ -333,6 +333,10 @@ impl Server {
     fn find_path_to(&self, destination_id: NodeId) -> Vec<NodeId> {
         vec![self.id, 1, 2, destination_id]
     }
+
+    fn generate_unique_fragment_id(&self) -> u64 {
+        1
+    }
 }
 
 impl CommunicationServer for Server {
@@ -389,7 +393,7 @@ impl CommunicationServer for Server {
         }
 
         //Generating header
-        let route: Vec<NodeId> = self.find_path_to(self.list_users.get(&nickname)); //To implement findpath
+        let route: Vec<NodeId> = self.find_path_to(*self.list_users.get(&nickname).unwrap()); //To implement findpath
         let header = Self::create_source_routing(route); //To fill
 
         // Generating fragment
