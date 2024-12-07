@@ -52,16 +52,6 @@ pub fn interface() {
                 match user_choice_id {
                     1 => println!("Starting flooding..."),
                     2 => {
-                        //    AskType,
-                        //
-                        //     //To Communication Server
-                        //     AddClient(String, NodeId),
-                        //     AskListClients,
-                        //     SendMessageTo(String, Message),
-                        //
-                        //     //To Content Server
-                        //     GetMedia, //not sure if i have to ask for which media before or whaT else
-
                         println!("What you wanna ask to the server?");
                         println!("1. Ask type of the server");
                         println!("2. Quit");
