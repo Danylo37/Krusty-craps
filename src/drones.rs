@@ -1,12 +1,12 @@
 use crossbeam_channel::{select_biased, Receiver, Sender};
-use std::collections::{HashMap, HashSet};
 use rand::Rng;
+use std::collections::{HashMap, HashSet};
 
 use wg_2024::{
     controller::{DroneCommand, DroneEvent},
     drone::Drone,
     network::{NodeId, SourceRoutingHeader},
-    packet::{Ack, FloodRequest, FloodResponse, Fragment, Nack, NackType, NodeType, Packet, PacketType},
+    packet::{FloodRequest, Fragment, Nack, NackType, NodeType, Packet, PacketType},
 };
 
 pub struct KrustyCrapDrone {
@@ -64,12 +64,12 @@ impl Drone for KrustyCrapDrone {
 
 impl KrustyCrapDrone {
     fn handle_packet(&mut self, packet: Packet) {
-        match packet.pack_type {
-            PacketType::Nack(nack) => self.handle_nack(nack, packet.routing_header, packet.session_id),
-            PacketType::Ack(ack) => self.handle_ack(ack, packet.routing_header, packet.session_id),
+        match packet.pack_type.clone() {
+            PacketType::Nack(_) => self.handle_nack(packet),
+            PacketType::Ack(_) => self.handle_ack(packet),
             PacketType::MsgFragment(fragment) => self.handle_fragment(fragment, packet.routing_header, packet.session_id),
             PacketType::FloodRequest(flood_request) => self.handle_flood_request(flood_request, packet.session_id),
-            PacketType::FloodResponse(flood_response) => self.handle_flood_response(flood_response, packet.routing_header, packet.session_id),
+            PacketType::FloodResponse(_) => self.handle_flood_response(packet),
         }
     }
 
@@ -83,36 +83,22 @@ impl KrustyCrapDrone {
     }
 
     fn add_sender(&mut self, id: NodeId, sender: Sender<Packet>) {
+        // Add sender to the packet_send HashMap
         self.packet_send.insert(id, sender);
     }
 
     fn remove_sender(&mut self, id: NodeId) {
+        // Remove sender from the packet_send HashMap
         self.packet_send.remove(&id);
     }
 
-    fn handle_nack(
-        &mut self,
-        nack: Nack,
-        routing_header: SourceRoutingHeader,
-        session_id: u64)
-    {
-        // Create a new Nack packet using the updated routing header
-        let packet = Packet::new_nack(routing_header, session_id, nack);
-
-        // Send the Nack packet to the next hop in the route
+    fn handle_nack(&mut self, packet: Packet) {
+        // Forward the Nack packet to the next hop in the route
         self.send_to_next_hop(packet);
     }
 
-    fn handle_ack(
-        &mut self,
-        ack: Ack,
-        routing_header: SourceRoutingHeader,
-        session_id: u64)
-    {
-        // Create a new Ack packet using the updated routing header
-        let packet = Packet::new_ack(routing_header, session_id, ack.fragment_index);
-
-        // Send the Ack packet to the next hop in the route
+    fn handle_ack(&mut self, packet: Packet) {
+        // Forward the Ack packet to the next hop in the route
         self.send_to_next_hop(packet);
     }
 
@@ -160,8 +146,8 @@ impl KrustyCrapDrone {
         let mut packet = Packet::new_fragment(routing_header.clone(), session_id, fragment.clone());
 
         // Simulate packet drop based on the PDR
-        // If the random number is less than PDR, drop the packet (send a Nack 'Dropped')
-        // And send the 'PacketDropped' event to the simulation controller
+        // If the random number is less than PDR, send the 'PacketDropped' event to the simulation controller
+        // And send a Nack 'Dropped'
         if rand::rng().random_range(0.0..1.0) < self.pdr {
             self.send_event(DroneEvent::PacketDropped(packet));
             self.send_nack(NackType::Dropped, fragment.fragment_index, routing_header, session_id);
@@ -217,36 +203,40 @@ impl KrustyCrapDrone {
         let flood_id = flood_request.flood_id;
         let initiator_id = flood_request.initiator_id;
 
-        // Flood ID has already been received from this flood initiator
-        if self.floods.contains_key(&initiator_id) &&
-            self.floods.get(&initiator_id).unwrap().contains(&flood_id) {
+        // Check if the flood ID has already been received from this flood initiator
+        if self.floods.get(&initiator_id).map_or(false, |ids| ids.contains(&flood_id)) {
             // Generate and send the flood response
             let response = flood_request.generate_response(session_id);
             self.send_to_next_hop(response);
             return;
         }
 
-        // Flood ID has not yet been received from this flood initiator
-        if !self.floods.contains_key(&initiator_id) {
-            self.floods.insert(initiator_id, HashSet::new());
-        }
-        self.floods.get(&initiator_id).unwrap().to_owned().insert(flood_id);
+        // If Flood ID has not yet been received from this flood initiator
+        self.floods
+            // Use the 'entry' method to get access to the entry with the key 'initiator_id'
+            .entry(initiator_id)
+            // If the entry doesn't exist, create a new 'HashSet' using 'or_insert_with'
+            .or_insert_with(HashSet::new)
+            // Insert 'flood_id' into the found or newly created 'HashSet'
+            .insert(flood_id);
 
         // Check if there's a previous node (sender) in the flood path
-        if let Some(sender_id) = self.get_prev_node_id(&flood_request.path_trace) {
-            // Get all neighboring nodes except the sender
-            let neighbors = self.get_neighbors_except(sender_id);
+        // If the sender isn't found, print an error
+        let Some(sender_id) = self.get_prev_node_id(&flood_request.path_trace) else {
+            eprintln!("There's no previous node in the flood path.");
+            return;
+        };
 
-            // If there are neighbors, forward the flood request to them
-            if !neighbors.is_empty() {
-                self.forward_flood_request(neighbors, flood_request, session_id);
-            } else {
-                // If no neighbors, generate and send a response instead
-                let response = flood_request.generate_response(session_id);
-                self.send_to_next_hop(response);
-            }
+        // Get all neighboring nodes except the sender
+        let neighbors = self.get_neighbors_except(sender_id);
+
+        // If there are neighbors, forward the flood request to them
+        if !neighbors.is_empty() {
+            self.forward_flood_request(neighbors, flood_request, session_id);
         } else {
-            eprintln!("There's no previous node in the flood path. Path is incorrect");
+            // If no neighbors, generate and send a response instead
+            let response = flood_request.generate_response(session_id);
+            self.send_to_next_hop(response);
         }
     }
 
@@ -284,22 +274,13 @@ impl KrustyCrapDrone {
                 self.send_through_controller(packet.clone());
                 return;
             }
-
             // Send the 'PacketSent' event to the simulation controller
             self.send_event(DroneEvent::PacketSent(packet));
         }
     }
 
-    fn handle_flood_response(
-        &mut self,
-        flood_response: FloodResponse,
-        routing_header: SourceRoutingHeader,
-        session_id: u64)
-    {
-        // Create a new FloodResponse packet with an updated routing header
-        let packet = Packet::new_flood_response(routing_header.clone(), session_id, flood_response.clone());
-
-        // Send the packet to the next hop
+    fn handle_flood_response(&mut self, packet: Packet) {
+        // Forward the packet to the next hop
         self.send_to_next_hop(packet);
     }
 
