@@ -80,7 +80,7 @@ fn use_clients(controller: &mut SimulationController){
     }
 
     let user_choice = ask_input_user();
-    let client_id_chose = clients_ids[(user_choice+1) as usize];
+    let client_id_chose = clients_ids[(user_choice-1) as usize];
     ///We should do a check if the id user chose exists!!!
 
 
