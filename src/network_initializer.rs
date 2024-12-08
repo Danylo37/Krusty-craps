@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+
 use std::{env, fs, thread};
 use crossbeam_channel::*;
 
@@ -48,13 +49,14 @@ impl NetworkInit {
         for drone in &config.drone{
             neighbours.insert(drone.id, drone.connected_node_ids.clone());
         }
-        for drone in &config.drone{
-            neighbours.insert(drone.id, drone.connected_node_ids.clone());
+        for client in &config.client{
+            neighbours.insert(client.id, client.connected_drone_ids.clone());
         }
-        for drone in &config.drone{
-            neighbours.insert(drone.id, drone.connected_node_ids.clone());
+        for server in &config.server{
+            neighbours.insert(server.id, server.connected_drone_ids.clone());
         }
-        println!("ciao");
+
+
         //Creating the channels for sending Events to Controller (For Drones, Clients and Servers)
         let (to_control_event_drone, control_get_event_drone) = unbounded();
         let (to_control_event_client, control_get_event_client) = unbounded();
@@ -136,7 +138,7 @@ impl NetworkInit {
             let (packet_sender, packet_receiver) = unbounded();
 
             //
-            self.drone_sender_channels.insert(client.id, packet_sender);
+            self.clients_sender_channels.insert(client.id, packet_sender);
 
             //Copy of contrEvent
             let copy_contr_event = to_contr_event.clone();
@@ -195,35 +197,46 @@ impl NetworkInit {
     fn connect_nodes(&self, controller: &mut SimulationController, neighbours: HashMap<NodeId, Vec<NodeId>>) {
         for (node_id, connected_node_ids) in neighbours.iter() {
             for &connected_node_id in connected_node_ids {
+
                 // Retrieve the Sender channel based on node type
-                match self.get_sender_for_node(*node_id) {
-                    Some((NodeType::Drone, sender)) =>
-                        // Use the 'controller' to establish the connection
-                        controller.add_sender(*node_id, NodeType::Drone,connected_node_id, sender),
-                    
-                    Some((NodeType::Client, sender)) =>
-                        controller.add_sender(*node_id, NodeType::Client,connected_node_id, sender),
-                    
-                    Some((NodeType::Server, sender)) =>
-                        controller.add_sender(*node_id, NodeType::Server, connected_node_id, sender),
+                let node_type = self.get_type(node_id);
+                let sender = self.get_sender_for_node(connected_node_id).unwrap();
+                match node_type {
+                    Some(NodeType::Drone) => controller.add_sender(*node_id, NodeType::Drone ,connected_node_id, sender),
+                    Some(NodeType::Client) => controller.add_sender(*node_id, NodeType::Client ,connected_node_id, sender),
+                    Some(NodeType::Server) => controller.add_sender(*node_id, NodeType::Server , connected_node_id, sender),
                     
                     None => panic!("Sender channel not found for node {}!", *node_id),
                 };
             }
         }
+
     }
 
-    fn get_sender_for_node(&self, node_id: NodeId) -> Option<(NodeType, Sender<Packet>)> {
+    fn get_sender_for_node(&self, node_id: NodeId) -> Option<Sender<Packet>> {
         if let Some(sender) = self.drone_sender_channels.get(&node_id) {
-            return Some((NodeType::Drone, sender.clone()));
+            return Some(sender.clone());
         }
         if let Some(sender) = self.clients_sender_channels.get(&node_id) {
-            return Some((NodeType::Client, sender.clone()));
+            return Some(sender.clone());
         }
         if let Some(sender) = self.servers_sender_channels.get(&node_id) {
-            return Some((NodeType::Server, sender.clone()));
+            return Some(sender.clone());
         }
         None // Sender not found in any HashMap
+    }
+
+    fn get_type(&self, node_id: &NodeId) -> Option<NodeType> {
+        if let Some(sender) = self.drone_sender_channels.get(node_id) {
+            return Some(NodeType::Drone);
+        }
+        if let Some(sender) = self.clients_sender_channels.get(node_id) {
+            return Some(NodeType::Client);
+        }
+        if let Some(sender) = self.servers_sender_channels.get(node_id) {
+            return Some(NodeType::Server);
+        }
+        None //Not found
     }
 }
 
