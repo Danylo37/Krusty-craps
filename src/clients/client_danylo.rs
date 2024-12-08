@@ -52,6 +52,9 @@ impl ClientDanylo {
                             ClientCommand::RemoveSender(id) => {
                                 self.packet_send.remove(&id);
                             }
+                            ClientCommand::AskTypeTo(server_id) => {
+                                self.request_server_type(server_id)
+                            }
                         }
                     }
                 },
