@@ -219,6 +219,7 @@ impl Server {
         routing_header: SourceRoutingHeader,
         session_id: u64,
     ) {
+        println!("Hello");
         // Packet Verification
         if self.id != routing_header.hops[routing_header.hop_index] {
             // Send Nack (UnexpectedRecipient)
@@ -295,6 +296,9 @@ impl Server {
     ///Common functions
     pub fn give_type_back(&self, src_id: NodeId) {
 
+
+        println!("We did it");
+
         //Get data
         let server_type = self.server_type;
 
@@ -319,7 +323,6 @@ impl Server {
 
         //Send fragments
         self.send_fragments(id_fragment, session_id, n_fragments, response_in_vec_bytes, header);
-
     }
 
     fn generate_unique_flood_id(&self) -> u64 {
@@ -331,7 +334,7 @@ impl Server {
     }
 
     fn find_path_to(&self, destination_id: NodeId) -> Vec<NodeId> {
-        vec![self.id, 1, 2, destination_id]
+        vec![self.id, 2, 1, destination_id]
     }
 
     fn generate_unique_fragment_id(&self) -> u64 {
