@@ -38,8 +38,8 @@ fn crash_drone(controller: &mut SimulationController) {
 }
 
 fn ask_input_user() -> i32 {
-    let user_input = take_user_input_and_parse();
     loop {
+        let user_input = take_user_input_and_parse();
         if user_input != -1 {
             return user_input;
         }
