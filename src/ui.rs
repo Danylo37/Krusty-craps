@@ -16,10 +16,10 @@ pub fn start_ui(mut controller: SimulationController) {
 
         ///Choosing base options
         println!(
-            "Choose an option\n
-            1. Use clients\n
-            2. Crashing a drone\n
-            3. Nothing\n"
+            "Choose an option
+            1. Use clients
+            2. Crashing a drone
+            3. Nothing"
         );
         let user_choice = ask_input_user();
 
@@ -97,8 +97,8 @@ fn choose_action_client(client_id_chose: NodeId, controller: &mut SimulationCont
         println!("\n\n Choose client function?");
         println!(
             "1. Start flooding
-            2. Ask the server something\n
-            3. Go back\n"
+            2. Ask the server something
+            3. Go back"
         );
         //2 is to change with more servers
 
@@ -126,8 +126,8 @@ fn ask_server_action(client_id_chose: NodeId, controller: &mut SimulationControl
         println!("\n\n What is your query?");
         println!(
             "1. Ask type to the server
-            2. More\n
-            3. Go back\n"
+            2. More
+            3. Go back"
         );
         let user_choice = ask_input_user();
 
