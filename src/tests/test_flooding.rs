@@ -10,7 +10,7 @@ use wg_2024::{
 use wg_2024::controller::DroneEvent;
 use crate::tests::util::{create_flood_request_packet, TIMEOUT};
 
-pub(crate) fn generic_flood_request_forward<T: Drone + Send + 'static>() {
+pub fn generic_flood_request_forward<T: Drone + Send + 'static>() {
     // Client 1 channels
     let (c_send, _c_recv) = unbounded();
     // Server 21 channels
