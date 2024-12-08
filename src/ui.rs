@@ -75,7 +75,7 @@ fn use_clients(controller: &mut SimulationController){
     let clients_ids = controller.get_list_clients();
     for (i, client) in clients_ids.iter().enumerate(){
         println!(
-            "{}- Client with node {} \n", i+1, client
+            "{}- Client with nodeId {} \n", i+1, client
         );
     }
 
