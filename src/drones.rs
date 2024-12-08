@@ -9,6 +9,24 @@ use wg_2024::{
     packet::{FloodRequest, Fragment, Nack, NackType, NodeType, Packet, PacketType},
 };
 
+const BACKFLIPMAN: &str = "
+  O
+ /|\
+ / \
+ ~  ~
+ | |
+ | |
+  O
+ \\|/
+ / \
+~   ~
+ ||
+  O
+ /|\
+ / \
+~   ~
+";
+
 pub struct KrustyCrapDrone {
     id: NodeId,
     controller_send: Sender<DroneEvent>,
@@ -364,6 +382,6 @@ impl KrustyCrapDrone {
     }
 
     fn request_to_do_a_backflip() {
-        println!("BACKFLIP");
+        println!(BACKFLIPMAN);
     }
 }
