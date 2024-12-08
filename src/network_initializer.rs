@@ -42,7 +42,7 @@ impl NetworkInit {
         let config_data =
             fs::read_to_string(input_path).expect("Unable to read config file");
         let config: Config = toml::from_str(&config_data).expect("Unable to parse TOML");
-        
+
         //Splitting information - getting data about neighbours
         let mut neighbours: HashMap<NodeId, Vec<NodeId>> = HashMap::new();
         for drone in &config.drone{
