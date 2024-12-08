@@ -1,14 +1,8 @@
-use std::collections::HashMap;
+
 //UI made by lillo since CHen can't code
-use crate::clients::client_chen::ClientChen;
-use crate::general_use::*;
-use crate::network_initializer::NetworkInit;
-use crate::server::{CommunicationServer, ContentServer};
+
 use std::io;
-use crossbeam_channel::{Receiver, Sender};
 use wg_2024::network::NodeId;
-use wg_2024::packet::NodeType::Client;
-use wg_2024::packet::Packet;
 use crate::simulation_controller::SimulationController;
 
 pub fn start_ui(mut controller: SimulationController) {
