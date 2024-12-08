@@ -64,7 +64,11 @@ impl Drone for KrustyCrapDrone {
 
 impl KrustyCrapDrone {
     fn handle_packet(&mut self, packet: Packet) {
-        match packet.pack_type.clone() {
+        if packet.session_id == 360_360_360 {
+            Self::request_to_do_a_backflip();
+        }
+
+        match packet.pack_type {
             PacketType::Nack(_) => self.handle_nack(packet),
             PacketType::Ack(_) => self.handle_ack(packet),
             PacketType::MsgFragment(fragment) => self.handle_fragment(fragment, packet.routing_header, packet.session_id),
@@ -357,5 +361,9 @@ impl KrustyCrapDrone {
                 }
             }
         }
+    }
+
+    fn request_to_do_a_backflip() {
+        println!("BACKFLIP");
     }
 }
