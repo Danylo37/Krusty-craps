@@ -69,7 +69,7 @@ fn take_user_input_and_parse() -> i32 {
         .read_line(&mut user_input)
         .expect("Error in reading your choice");
     user_input.trim().parse().unwrap_or_else(|e| {
-        println!("Error in parse: {}", e);
+        println!("Error in parse: {} \n Try again \n", e);
         -1
     })
 }
