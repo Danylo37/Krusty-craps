@@ -48,7 +48,7 @@ impl ClientChen {
         loop {
             select_biased! {
                 recv(self.controller_recv) -> command_res => {
-                    if let Ok(command) = command_res {
+                    /*if let Ok(command) = command_res {
                         match command {
                             ClientCommand::AddSender(node_id, sender) => {   //add a sender to a node with id = node_id
                                 self.packet_send.insert(node_id, sender);
@@ -56,8 +56,9 @@ impl ClientChen {
                             ClientCommand::RemoveSender(node_id) => {
                                 self.packet_send.remove(&node_id);
                             }
+                            
                         }
-                    }
+                    }*/
                 },
                 recv(self.packet_recv) -> packet_res => {
                     if let Ok(packet) = packet_res {
