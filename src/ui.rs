@@ -25,7 +25,7 @@ pub fn start_ui(mut controller: SimulationController) {
 
         match user_choice {
             1 => { use_clients(&mut controller) }
-            2 => { crash_drone(&mut controller) }, //you need to put the crash of the drone function
+            2 => { crash_drone(&mut controller) },
             3 => break, //we break from the loop, thus we exit from the interaction.
             _ => println!("Not a valid option, choose again"),
         }
@@ -33,7 +33,25 @@ pub fn start_ui(mut controller: SimulationController) {
 }
 
 fn crash_drone(controller: &mut SimulationController) {
-    todo!()
+    println!("Enter the ID of the drone to crash:");
+
+    let mut input = String::new();
+
+    io::stdin().read_line(&mut input).expect("Failed to read input");
+
+
+    let drone_id: NodeId = match input.trim().parse() {
+        Ok(id) => id,
+        Err(_) => {
+            println!("Invalid input. Please enter a valid drone ID.");
+            return; // Or handle the error differently (e.g., loop until valid input)
+        }
+    };
+
+    match controller.request_drone_crash(drone_id) {
+        Ok(()) => println!("Crash command sent to drone {}", drone_id),
+        Err(e) => println!("Error: {}", e),  // Display the specific error returned by request_drone_crash
+    }
 }
 
 fn ask_input_user() -> i32 {
@@ -104,7 +122,7 @@ fn choose_action_client(client_id_chose: NodeId, controller: &mut SimulationCont
 
 
         match user_choice {
-            1 => { /*controller.start_flooding_on_client(client_id);  to do*/ }
+            1 => { controller.start_flooding_on_client(client_id_chose);}
             2 => {ask_server_action(client_id_chose, controller)}
             3 => { stay_inside = false; }
             _ => println!("Not a valid option, choose again")

@@ -96,12 +96,12 @@ impl SimulationController {
 
     /// Spawns a new drone.
     pub fn create_drone<T: Drone + Send + 'static>(&mut self,
-        drone_id: NodeId,
-        event_sender: Sender<DroneEvent>,
-        command_receiver: Receiver<DroneCommand>,
-        packet_receiver: Receiver<Packet>,
-        connected_nodes: HashMap<NodeId, Sender<Packet>>,
-        pdr: f32,
+                                                   drone_id: NodeId,
+                                                   event_sender: Sender<DroneEvent>,
+                                                   command_receiver: Receiver<DroneCommand>,
+                                                   packet_receiver: Receiver<Packet>,
+                                                   connected_nodes: HashMap<NodeId, Sender<Packet>>,
+                                                   pdr: f32,
     ) -> Result<T, String> {
 
         let drone = T::new(
@@ -269,23 +269,47 @@ impl SimulationController {
     /*- This function sends a Crash command to the specified drone_id.
 It uses the command_senders map to find the appropriate sender channel.
 */
-    pub fn crash_drone(&mut self, drone_id: NodeId) {
+    pub fn request_drone_crash(&mut self, drone_id: NodeId) -> Result<(), String> {
         if let Some(command_sender) = self.command_senders_drones.get(&drone_id) {
             if let Err(e) = command_sender.send(DroneCommand::Crash) { // Error handling
                 eprintln!("Failed to send Crash command to drone {}: {:?}", drone_id, e);
+                return Err(format!("Failed to send Crash command to drone {}: {:?}", drone_id, e));
             }
+            Ok(())
+
         } else {
-            eprintln!("Drone {} not found in controller", drone_id);
+            Err(format!("Drone {} not found in controller", drone_id))
         }
     }
 
     pub fn get_list_clients(&self) -> Vec<NodeId> {
-        self.command_senders_clients.keys().cloned().collect()
+        self.command_senders_clients.keys().copied().collect()
     }
 
-    pub fn ask_server_type_with_client_id(&self, client_id: NodeId, server_id: NodeId) {
-        if let Some(sender) = self.command_senders_clients.get(&client_id){
-            sender.send(AskTypeTo(server_id));  //Why this warning?
+    pub fn get_list_servers(&self) -> Vec<NodeId> {
+        self.command_senders_servers.keys().copied().collect()
+    }
+
+    pub fn start_flooding_on_client(&self, client_id: NodeId) -> Result<(), String> {
+
+        if let Some(client_command_sender) = self.command_senders_clients.get(&client_id) {
+            if let Err(e) = client_command_sender.send(ClientCommand::StartFlooding) {
+                return Err(format!("Failed to send StartFlooding command to client {}: {:?}", client_id, e));
+            }
+            Ok(())
+        } else {
+            Err(format!("Client with ID {} not found", client_id))
+        }
+    }
+
+    pub fn ask_server_type_with_client_id(&mut self, client_id: NodeId, server_id: NodeId) -> Result<(), String> {
+        if let Some(client_command_sender) = self.command_senders_clients.get(&client_id) {
+            if let Err(e) = client_command_sender.send(ClientCommand::AskTypeTo(server_id)) {
+                return Err(format!("Failed to send AskServerType command to client {}: {:?}", client_id, e));
+            }
+            Ok(())
+        } else {
+            Err(format!("Client with ID {} not found", client_id))
         }
     }
 }
