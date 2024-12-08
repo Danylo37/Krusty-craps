@@ -141,13 +141,17 @@ impl NetworkInit {
             //Copy of contrEvent
             let copy_contr_event = to_contr_event.clone();
 
-            //FINISH HERE
-            // copy_contr_event is the channel to send ClientEvent to the controller
-            // client_get_command_recv is obv
-            // packet_receiver same
             thread::spawn(move || {
+                let mut client = clients::client_danylo::ClientDanylo::new(
+                    client.id,
+                    client.connected_drone_ids,
+                    HashMap::new(),
+                    packet_receiver,
+                    copy_contr_event,
+                    client_get_command_recv,
+                );
 
-                //client.run();
+                client.run();
             });
         }
     }
