@@ -89,7 +89,7 @@ impl ClientDanylo {
     }
 
     fn handle_fragment(&self, _fragment: Fragment) {
-        todo!()
+        println!("The fragment received");
     }
 
     fn handle_flood_request(&self, _flood_request: FloodRequest) {
