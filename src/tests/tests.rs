@@ -1,8 +1,8 @@
-use wg_2024::tests::{generic_fragment_forward, generic_fragment_drop};
 use crate::tests::{
-    test_fragments::generic_chain_fragment_drop,
-    test_flooding::generic_flood_request_forward
+    test_fragments::*,
+    test_flooding::*,
 };
+
 use crate::drones::KrustyCrapDrone;
 
 #[cfg(test)]
@@ -20,6 +20,11 @@ fn test_generic_fragment_drop() {
 #[test]
 fn test_generic_chain_fragment_drop() {
     generic_chain_fragment_drop::<KrustyCrapDrone>();
+}
+
+#[test]
+fn test_generic_chain_fragment_ack() {
+    generic_chain_fragment_ack::<KrustyCrapDrone>();
 }
 
 #[test]

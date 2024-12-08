@@ -14,7 +14,7 @@ use crate::server;
 use crate::clients;
 use crate::general_use::{ClientCommand,ClientEvent, ServerCommand, ServerEvent, ServerType};
 use crate::simulation_controller::SimulationController;
-use crate::ui::interface;
+use crate::ui::start_ui;
 
 pub struct NetworkInit {
     drone_sender_channels: HashMap<NodeId, Sender<Packet>>,
@@ -32,15 +32,17 @@ impl NetworkInit {
     }
     pub fn parse(&mut self, input: &str){
 
+        println!("{:?}", env::current_dir().expect("Failed to get current directory"));
+
+        // Construct the full path by joining the current directory with the input path
+        let current_dir = env::current_dir().expect("Failed to get current directory");
+        let input_path = current_dir.join(input);  // This combines the current directory with the `input` file name
+
         //Deserializing the TOML file
-
-        println!("ciao");
-        println!("{:?}",env::current_dir().expect("Failed to get current directory"));
         let config_data =
-            fs::read_to_string(input).expect("Unable to read config file");
+            fs::read_to_string(input_path).expect("Unable to read config file");
         let config: Config = toml::from_str(&config_data).expect("Unable to parse TOML");
-
-        println!("ciao");
+        
         //Splitting information - getting data about neighbours
         let mut neighbours: HashMap<NodeId, Vec<NodeId>> = HashMap::new();
         for drone in &config.drone{
@@ -82,13 +84,8 @@ impl NetworkInit {
         //Connecting the Nodes
         self.connect_nodes(&mut controller, neighbours);
 
-        Self::start_ui();
-    }
-
-    /// UI
-    pub fn start_ui(){
         println!("Starting UI");
-        interface();
+        start_ui(controller);
     }
 
 

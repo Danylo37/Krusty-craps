@@ -7,8 +7,8 @@ use wg_2024::{
     network::SourceRoutingHeader,
     packet::{Packet, PacketType, FloodRequest, NodeType},
 };
-
-use crate::tests::util::create_flood_request_packet;
+use wg_2024::controller::DroneEvent;
+use crate::tests::util::{create_flood_request_packet, TIMEOUT};
 
 pub(crate) fn generic_flood_request_forward<T: Drone + Send + 'static>() {
     // Client 1 channels
@@ -19,14 +19,15 @@ pub(crate) fn generic_flood_request_forward<T: Drone + Send + 'static>() {
     let (d11_send, d11_recv) = unbounded();
     // Drone 12
     let (d12_send, d12_recv) = unbounded();
-    // SC - needed to not make the drone crash
+
     let (_d_command_send, d_command_recv) = unbounded();
+    let (d_event_send, d_event_recv) = unbounded();
 
     // Drone 11
     let neighbours11 = HashMap::from([(12, d12_send.clone()), (1, c_send.clone())]);
     let mut drone11 = T::new(
         11,
-        unbounded().0,
+        d_event_send.clone(),
         d_command_recv.clone(),
         d11_recv.clone(),
         neighbours11,
@@ -36,7 +37,7 @@ pub(crate) fn generic_flood_request_forward<T: Drone + Send + 'static>() {
     let neighbours12 = HashMap::from([(11, d11_send.clone()), (21, s_send.clone())]);
     let mut drone12 = T::new(
         12,
-        unbounded().0,
+        d_event_send.clone(),
         d_command_recv.clone(),
         d12_recv.clone(),
         neighbours12,
@@ -52,21 +53,45 @@ pub(crate) fn generic_flood_request_forward<T: Drone + Send + 'static>() {
         drone12.run();
     });
 
-    let msg = create_flood_request_packet();
+    let flood_request = create_flood_request_packet();
+    let expected_flood_request = Packet {
+        pack_type: PacketType::FloodRequest(FloodRequest {
+            flood_id: 1,
+            initiator_id: 1,
+            path_trace: vec![(1, NodeType::Client), (11, NodeType::Drone), (12, NodeType::Drone)],
+        }),
+        routing_header: SourceRoutingHeader::empty_route(),
+        session_id: 2,
+    };
+
+    let expected_flood_request_to_forward_1 = Packet {
+        pack_type: PacketType::FloodRequest(FloodRequest {
+            flood_id: 1,
+            initiator_id: 1,
+            path_trace: vec![(1, NodeType::Client), (11, NodeType::Drone)],
+        }),
+        routing_header: SourceRoutingHeader::empty_route(),
+        session_id: 2,
+    };
+
+    let expected_flood_request_to_forward_2 = expected_flood_request.clone();
+
 
     // "Client" sends packet to the drone
-    d11_send.send(msg.clone()).unwrap();
+    d11_send.send(flood_request.clone()).unwrap();
 
     assert_eq!(
         s_recv.recv().unwrap(),
-        Packet {
-            pack_type: PacketType::FloodRequest(FloodRequest {
-                flood_id: 1,
-                initiator_id: 1,
-                path_trace: vec![(1, NodeType::Client), (11, NodeType::Drone), (12, NodeType::Drone)],
-            }),
-            routing_header: SourceRoutingHeader::empty_route(),
-            session_id: 1,
-        }
+        expected_flood_request.clone()
+    );
+
+    assert_eq!(
+        d_event_recv.recv_timeout(TIMEOUT).unwrap(),
+        DroneEvent::PacketSent(expected_flood_request_to_forward_1)
+    );
+
+    assert_eq!(
+        d_event_recv.recv_timeout(TIMEOUT).unwrap(),
+        DroneEvent::PacketSent(expected_flood_request_to_forward_2)
     );
 }

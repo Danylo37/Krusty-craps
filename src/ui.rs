@@ -9,30 +9,31 @@ use crossbeam_channel::{Receiver, Sender};
 use wg_2024::network::NodeId;
 use wg_2024::packet::NodeType::Client;
 use wg_2024::packet::Packet;
+use crate::simulation_controller::SimulationController;
 
-pub fn interface() {
+pub fn start_ui(mut controller: SimulationController) {
     loop {
 
         ///Choosing base options
         println!(
-            "Choose an option\n"
-            "1. Use clients\n"
-            "2. Crashing a drone\n"
-            "3. Nothing\n"
+            "Choose an option\n
+            1. Use clients\n
+            2. Crashing a drone\n
+            3. Nothing\n"
         );
         let user_choice = ask_input_user();
 
 
         match user_choice {
-            1 => { use_clients() }
-            2 => { crash_drone() }, //you need to put the crash of the drone function
+            1 => { use_clients(&mut controller) }
+            2 => { crash_drone(&mut controller) }, //you need to put the crash of the drone function
             3 => break, //we break from the loop, thus we exit from the interaction.
             _ => println!("Not a valid option, choose again"),
         }
     }
 }
 
-fn crash_drone() {
+fn crash_drone(controller: &mut SimulationController) {
     todo!()
 }
 
@@ -66,7 +67,7 @@ fn take_user_input() -> String {
 }
 
 
-fn use_clients(){
+fn use_clients(controller: &mut SimulationController){
 
     println!("\n Which client? \n");
 
@@ -79,12 +80,14 @@ fn use_clients(){
     }
 
     let user_choice = ask_input_user();
-    let client_id_chose = clients_ids.get(user_choice as NodeId); //!!!We should do a check if the id user chose exists
+    let client_id_chose = clients_ids[user_choice as usize];
+    ///We should do a check if the id user chose exists!!!
 
-    choose_action_client(client_id_chose);
+
+    choose_action_client(client_id_chose, controller);
 }
 
-fn choose_action_client(client_id_chose: NodeId) {
+fn choose_action_client(client_id_chose: NodeId, controller: &mut SimulationController) {
 
     //Variable that allows to go back
     let mut stay_inside = true;
@@ -93,26 +96,28 @@ fn choose_action_client(client_id_chose: NodeId) {
         ///Choosing client function
         println!("\n\n Choose client function?");
         println!(
-                        "1. Start flooding"
-                        "1. Ask the server something\n"       //to change with more servers
-                        "2. Go back\n"
-                    );
+            "1. Start flooding
+            2. Ask the server something\n
+            3. Go back\n"
+        );
+        //2 is to change with more servers
+
         let user_choice = ask_input_user();
 
 
         match user_choice {
             1 => { /*controller.start_flooding_on_client(client_id);  to do*/ }
-            2 => {ask_server_action(client_id_chose)}
+            2 => {ask_server_action(client_id_chose, controller)}
             3 => { stay_inside = false; }
             _ => println!("Not a valid option, choose again")
         }
     }
 }
 
-fn ask_server_action(client_id_chose: NodeId) {
+fn ask_server_action(client_id_chose: NodeId, controller: &mut SimulationController) {
 
     ///!!! To make with more servers
-    
+
     //Variable that allows to go back
     let mut stay_inside = true;
     while stay_inside {
@@ -120,14 +125,14 @@ fn ask_server_action(client_id_chose: NodeId) {
         ///Choosing what to ask server
         println!("\n\n What is your query?");
         println!(
-            "1. Ask type to the server"
-            "1. More\n"       //to other options
-            "2. Go back\n"
+            "1. Ask type to the server
+            2. More\n
+            3. Go back\n"
         );
         let user_choice = ask_input_user();
 
         match user_choice {
-            1 => { controller.ask_server_type_with_client_id(client_id_chose); } //To do
+            1 => { controller.ask_server_type_with_client_id(client_id_chose, 4) } //For testing it doesn't choose the server, it's only one with NodeId 4
             2 => println!("to do"),
             3 => { stay_inside = false; }
             _ => println!("Not a valid option, choose again")
@@ -136,8 +141,8 @@ fn ask_server_action(client_id_chose: NodeId) {
     }
 }
 
-fn ask_comm_server(client_id_chose: NodeId, sever_id_chose: NodeId) {
-    /*       
+fn ask_comm_server(client_id_chose: NodeId, sever_id_chose: NodeId, controller: &mut SimulationController) {
+    /*
     println!("What you wanna ask to the communication server:");
     println!("1. Add a client into the list");
     println!("2. Ask for the list of all the registered clients");
