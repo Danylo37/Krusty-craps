@@ -382,6 +382,6 @@ impl KrustyCrapDrone {
     }
 
     fn request_to_do_a_backflip() {
-        println!(BACKFLIPMAN);
+        println!("{}", BACKFLIPMAN);
     }
 }
