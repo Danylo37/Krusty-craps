@@ -16,13 +16,12 @@ pub fn start_ui(mut controller: SimulationController) {
 
         ///Choosing base options
         println!(
-            "Choose an option
-            1. Use clients
-            2. Crashing a drone
-            3. Nothing"
+"Choose an option
+1. Use clients
+2. Crashing a drone
+3. Nothing"
         );
         let user_choice = ask_input_user();
-
 
         match user_choice {
             1 => { use_clients(&mut controller) }
@@ -83,7 +82,6 @@ fn use_clients(controller: &mut SimulationController){
     let client_id_chose = clients_ids[(user_choice-1) as usize];
     ///We should do a check if the id user chose exists!!!
 
-
     choose_action_client(client_id_chose, controller);
 }
 
@@ -96,9 +94,9 @@ fn choose_action_client(client_id_chose: NodeId, controller: &mut SimulationCont
         ///Choosing client function
         println!("\n\n Choose client function?");
         println!(
-            "1. Start flooding
-            2. Ask the server something
-            3. Go back"
+"1. Start flooding
+2. Ask the server something
+3. Go back"
         );
         //2 is to change with more servers
 
@@ -125,14 +123,14 @@ fn ask_server_action(client_id_chose: NodeId, controller: &mut SimulationControl
         ///Choosing what to ask server
         println!("\n\n What is your query?");
         println!(
-            "1. Ask type to the server
-            2. More
-            3. Go back"
+"1. Ask type to the server
+2. More
+3. Go back"
         );
         let user_choice = ask_input_user();
 
         match user_choice {
-            1 => { controller.ask_server_type_with_client_id(client_id_chose, 4) } //For testing it doesn't choose the server, it's only one with NodeId 4
+            1 => { controller.ask_server_type_with_client_id(client_id_chose, 4).unwrap() } //For testing it doesn't choose the server, it's only one with NodeId 4
             2 => println!("to do"),
             3 => { stay_inside = false; }
             _ => println!("Not a valid option, choose again")
