@@ -1,229 +1,151 @@
-use std::collections::HashMap;
-use std::{env, fs, thread};
-use crossbeam_channel::*;
+use crossbeam_channel::{select_biased, Receiver, Sender};
+use std::collections::{HashMap, HashSet};
 
 use wg_2024::{
-    packet::{Packet, NodeType},
-    config::{Config,Drone,Server,Client},
-    controller::{DroneEvent},
     network::NodeId,
+    packet::{Ack, FloodRequest, FloodResponse, Fragment, Nack, Packet, PacketType},
 };
-use wg_2024::drone::Drone as TraitDrone;
-use crate::drones::KrustyCrapDrone;
-use crate::server;
-use crate::clients;
-use crate::general_use::{ClientCommand,ClientEvent, ServerCommand, ServerEvent, ServerType};
-use crate::simulation_controller::SimulationController;
-use crate::ui::start_ui;
+use wg_2024::network::SourceRoutingHeader;
+use crate::general_use::{ClientCommand, ClientEvent, Query};
 
-pub struct NetworkInit {
-    drone_sender_channels: HashMap<NodeId, Sender<Packet>>,
-    clients_sender_channels: HashMap<NodeId, Sender<Packet>>,
-    servers_sender_channels: HashMap<NodeId, Sender<Packet>>,
+pub struct ClientDanylo {
+    id: NodeId,
+    connected_drone_ids: Vec<NodeId>,
+    packet_send: HashMap<NodeId, Sender<Packet>>,
+    packet_recv: Receiver<Packet>,
+    controller_send: Sender<ClientEvent>,
+    controller_recv: Receiver<ClientCommand>,
+    topology: HashMap<NodeId, HashSet<NodeId>>,
+    floods: HashMap<NodeId, HashSet<u64>>,
 }
 
-impl NetworkInit {
-    pub fn new() -> NetworkInit {
-        NetworkInit {
-            drone_sender_channels: HashMap::new(),
-            clients_sender_channels: HashMap::new(),
-            servers_sender_channels: HashMap::new(),
-        }
-    }
-    pub fn parse(&mut self, input: &str){
-
-        println!("{:?}", env::current_dir().expect("Failed to get current directory"));
-
-        // Construct the full path by joining the current directory with the input path
-        let current_dir = env::current_dir().expect("Failed to get current directory");
-        let input_path = current_dir.join(input);  // This combines the current directory with the `input` file name
-
-        //Deserializing the TOML file
-        let config_data =
-            fs::read_to_string(input_path).expect("Unable to read config file");
-        let config: Config = toml::from_str(&config_data).expect("Unable to parse TOML");
-
-        //Splitting information - getting data about neighbours
-        let mut neighbours: HashMap<NodeId, Vec<NodeId>> = HashMap::new();
-        for drone in &config.drone{
-            neighbours.insert(drone.id, drone.connected_node_ids.clone());
-        }
-        for drone in &config.drone{
-            neighbours.insert(drone.id, drone.connected_node_ids.clone());
-        }
-        for drone in &config.drone{
-            neighbours.insert(drone.id, drone.connected_node_ids.clone());
-        }
-        println!("ciao");
-        //Creating the channels for sending Events to Controller (For Drones, Clients and Servers)
-        let (to_control_event_drone, control_get_event_drone) = unbounded();
-        let (to_control_event_client, control_get_event_client) = unbounded();
-        let (to_control_event_server, control_get_event_server) = unbounded();
-
-        
-        //Creating controller
-        let mut controller = SimulationController::new(
-            to_control_event_drone.clone(),
-            control_get_event_drone,
-            to_control_event_client.clone(),
-            control_get_event_client,
-            to_control_event_server.clone(),
-            control_get_event_server
-        );
-
-
-        //Looping to get Drones
-        self.create_drones(config.drone, &mut controller, to_control_event_drone);
-
-        //Looping through servers (we have to decide how to split since we have two)
-        self.create_clients(config.client, &mut controller, to_control_event_client);
-
-        //Looping through Clients
-        self.create_servers(config.server, &mut controller, to_control_event_server);
-
-        //Connecting the Nodes
-        self.connect_nodes(&mut controller, neighbours);
-
-        println!("Starting UI");
-        start_ui(controller);
-    }
-
-
-    ///DRONES GENERATION
-
-    pub fn create_drones(&mut self, config_drone : Vec<Drone>, controller: &mut SimulationController, to_contr_event: Sender<DroneEvent>) {
-        for drone in config_drone {
-
-            //Adding channel to controller
-            let (to_drone_command_sender,drone_get_command_recv) = unbounded();
-            controller.register_drone(drone.id, to_drone_command_sender);
-
-            //Creating receiver for Drone
-            let (packet_sender, packet_receiver) = unbounded();
-
-            //Storing it for future usages
-            self.drone_sender_channels.insert(drone.id, packet_sender);
-
-            //Copy of contrEvent
-            let copy_contr_event = to_contr_event.clone();
-
-            //Creating Drone
-            let mut drone = controller.create_drone::<KrustyCrapDrone>(
-                drone.id,
-                copy_contr_event,
-                drone_get_command_recv,
-                packet_receiver,
-                HashMap::new(),
-                drone.pdr);
-
-            thread::spawn(move || {
-
-                match drone {
-                    Ok(mut drone) => drone.run(),
-                    Err(e) => panic!("{}",e),
-                }1
-            });
+impl ClientDanylo {
+    pub fn new(
+        id: NodeId,
+        connected_drone_ids: Vec<NodeId>,
+        packet_send: HashMap<NodeId, Sender<Packet>>,
+        packet_recv: Receiver<Packet>,
+        controller_send: Sender<ClientEvent>,
+        controller_recv: Receiver<ClientCommand>,
+    ) -> Self {
+        Self {
+            id,
+            connected_drone_ids,
+            packet_send,
+            packet_recv,
+            controller_send,
+            controller_recv,
+            topology: HashMap::new(),
+            floods: HashMap::new(),
         }
     }
 
-    ///CLIENTS GENERATION
-
-    fn create_clients(&mut self, config_client: Vec<Client>, controller: &mut SimulationController, to_contr_event: Sender<ClientEvent> ) {
-        for client in config_client {
-
-            let (to_client_command_sender, client_get_command_recv):(Sender<ClientCommand>,Receiver<ClientCommand>) = unbounded();
-            controller.register_client(client.id,to_client_command_sender);
-            let (packet_sender, packet_receiver) = unbounded();
-
-            //
-            self.drone_sender_channels.insert(client.id, packet_sender);
-
-            //Copy of contrEvent
-            let copy_contr_event = to_contr_event.clone();
-
-            thread::spawn(move || {
-                let mut client = clients::client_danylo::ClientDanylo::new(
-                    client.id,
-                    client.connected_drone_ids,
-                    HashMap::new(),
-                    packet_receiver,
-                    copy_contr_event,
-                    client_get_command_recv,
-                );
-
-                client.run();
-            });
-        }
-    }
-
-    /// SERVERS GENERATION
-
-    fn create_servers(&mut self, config_server: Vec<Server>, controller: &mut SimulationController, to_contr_event: Sender<ServerEvent> ) {
-        for server in config_server {
-            let (to_server_command_sender, server_get_command_recv):(Sender<ServerCommand>,Receiver<ServerCommand>) = unbounded();
-            controller.register_server(server.id, to_server_command_sender);
-
-            //Creating receiver for Server
-            let (packet_sender, packet_receiver) = unbounded();
-
-            //Storing it for future usages
-            self.servers_sender_channels.insert(server.id, packet_sender);
-
-            //Copy of contrEvent
-            let copy_contr_event = to_contr_event.clone();
-
-            thread::spawn(move || {
-
-                let mut server = server::Server::new(
-                    server.id,
-                    ServerType::Communication,
-                    Vec::new(),
-                    copy_contr_event,
-                    server_get_command_recv,
-                    packet_receiver,
-                    HashMap::new(),
-                );
-
-                server.run();
-            });
-
-        }
-    }
-
-    ///CREATING NETWORK
-
-    fn connect_nodes(&self, controller: &mut SimulationController, neighbours: HashMap<NodeId, Vec<NodeId>>) {
-        for (node_id, connected_node_ids) in neighbours.iter() {
-            for &connected_node_id in connected_node_ids {
-                // Retrieve the Sender channel based on node type
-                match self.get_sender_for_node(*node_id) {
-                    Some((NodeType::Drone, sender)) =>
-                        // Use the 'controller' to establish the connection
-                        controller.add_sender(*node_id, NodeType::Drone,connected_node_id, sender),
-                    
-                    Some((NodeType::Client, sender)) =>
-                        controller.add_sender(*node_id, NodeType::Client,connected_node_id, sender),
-                    
-                    Some((NodeType::Server, sender)) =>
-                        controller.add_sender(*node_id, NodeType::Server, connected_node_id, sender),
-                    
-                    None => panic!("Sender channel not found for node {}!", *node_id),
-                };
+    pub fn run(&mut self) {
+        loop {
+            select_biased! {
+                recv(self.controller_recv) -> command_res => {
+                    if let Ok(command) = command_res {
+                        match command {
+                            ClientCommand::AddSender(id, sender) => {
+                                self.packet_send.insert(id, sender);
+                            }
+                            ClientCommand::RemoveSender(id) => {
+                                self.packet_send.remove(&id);
+                            }
+                            ClientCommand::AskTypeTo(server_id) => {
+                                self.request_server_type(server_id);
+                            }
+                            ClientCommand::StartFlooding => {
+                                self.discovery();
+                            }
+                        }
+                    }
+                },
+                recv(self.packet_recv) -> packet_res => {
+                    if let Ok(packet) = packet_res {
+                        match packet.pack_type {
+                            PacketType::Nack(nack) => self.handle_nack(nack),
+                            PacketType::Ack(ack) => self.handle_ack(ack),
+                            PacketType::MsgFragment(fragment) => self.handle_fragment(fragment),
+                            PacketType::FloodRequest(flood_request) => self.handle_flood_request(flood_request),
+                            PacketType::FloodResponse(flood_response) => self.handle_flood_response(flood_response),
+                        }
+                    }
+                },
             }
         }
     }
 
-    fn get_sender_for_node(&self, node_id: NodeId) -> Option<(NodeType, Sender<Packet>)> {
-        if let Some(sender) = self.drone_sender_channels.get(&node_id) {
-            return Some((NodeType::Drone, sender.clone()));
-        }
-        if let Some(sender) = self.clients_sender_channels.get(&node_id) {
-            return Some((NodeType::Client, sender.clone()));
-        }
-        if let Some(sender) = self.servers_sender_channels.get(&node_id) {
-            return Some((NodeType::Server, sender.clone()));
-        }
-        None // Sender not found in any HashMap
+    fn discovery(&mut self) {}
+
+    fn handle_ack(&self, _ack: Ack) {
+        todo!()
+    }
+
+    fn handle_nack(&self, _nack: Nack) {
+        todo!()
+    }
+
+    fn handle_fragment(&self, _fragment: Fragment) {
+        todo!()
+    }
+
+    fn handle_flood_request(&self, _flood_request: FloodRequest) {
+        todo!()
+    }
+
+    fn handle_flood_response(&self, _flood_response: FloodResponse) {
+        todo!()
+    }
+    fn start_flooding(&self) {
+        todo!()
+    }
+
+    fn request_server_type(&self, server_id: NodeId) {
+        // ???????????????????????????????????
+        let query = Query::AskType;
+        let ask_type_query_string = serde_json::to_string(&query).unwrap();
+        let n_fragments = ask_type_query_string.clone().as_bytes().len();
+        let fragment = Fragment::from_string(0, n_fragments as u64, ask_type_query_string);
+
+        let hop_index = 1;
+        let hops = vec![1, 2, 3, server_id];
+        let routing_header = SourceRoutingHeader {
+            hop_index,
+            hops: hops.clone(),
+        };
+        
+        let packet = Packet {
+            routing_header,
+            session_id: 0,
+            pack_type: PacketType::MsgFragment(fragment),
+        };
+
+        let next_hop = self.packet_send.get(&hops[1]).unwrap();
+        next_hop.send(packet).unwrap();
+    }
+
+    fn request_files_list(&self) {
+        todo!()
+    }
+
+    fn request_file(&self) {
+        todo!()
+    }
+
+    fn request_media(&self) {
+        todo!()
+    }
+
+    fn serialize_message(&self) {
+        todo!()
+    }
+
+    fn fragment_message(&self) {
+        todo!()
+    }
+
+    fn reassemble_message(&self) {
+        todo!()
     }
 }
-
