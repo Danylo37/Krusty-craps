@@ -59,6 +59,9 @@ impl ClientDanylo {
                             ClientCommand::AskTypeTo(server_id) => {
                                 self.request_server_type(server_id)
                             }
+                            ClientCommand::StartFlooding => {
+                                self.start_flooding()
+                            },
                         }
                     }
                 },
