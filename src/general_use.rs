@@ -21,14 +21,19 @@ pub enum ServerEvent{
 
 /// From controller to Client
 pub enum ClientCommand {
+    //Controller functions
     RemoveSender(NodeId),
-    AddSender(NodeId, Sender<Packet>)
+    AddSender(NodeId, Sender<Packet>),
+
+    //Client behaviour
+    AskTypeTo(NodeId),
+    StartFlooding,
 }
 pub enum ClientEvent{
 
 }
 
-//Queries (Client -> Server
+//Queries (Client -> Server)
 #[derive(Deserialize, Serialize, Debug)]
 pub enum Query{
     //Common-shared

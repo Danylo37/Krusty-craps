@@ -56,6 +56,9 @@ impl ClientDanylo {
                             ClientCommand::RemoveSender(id) => {
                                 self.packet_send.remove(&id);
                             }
+                            ClientCommand::AskTypeTo(server_id) => {
+                                self.request_server_type(server_id)
+                            }
                         }
                     }
                 },
@@ -117,7 +120,7 @@ impl ClientDanylo {
         }
     }
 
-    fn request_server_type(&self) {
+    fn request_server_type(&self, server_id: NodeId) {
         // ???????????????????????????????????
         let query = Query::AskType;
         let ask_type_query_string = serde_json::to_string(&query).unwrap();
@@ -125,7 +128,7 @@ impl ClientDanylo {
         let fragment = Fragment::from_string(0, n_fragments as u64, ask_type_query_string);
 
         let hop_index = 1;
-        let hops = vec![1, 2, 3, 4];
+        let hops = vec![1, 2, 3, server_id];
         let routing_header = SourceRoutingHeader {
             hop_index,
             hops: hops.clone(),

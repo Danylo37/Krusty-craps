@@ -278,4 +278,14 @@ It uses the command_senders map to find the appropriate sender channel.
             eprintln!("Drone {} not found in controller", drone_id);
         }
     }
+
+    pub fn get_list_clients(&self) -> Vec<NodeId> {
+        self.command_senders_clients.keys().cloned().collect()
+    }
+
+    pub fn ask_server_type_with_client_id(&self, client_id: NodeId, server_id: NodeId) {
+        if let Some(sender) = self.command_senders_clients.get(&client_id){
+            sender.send(AskTypeTo(server_id));  //Why this warning?
+        }
+    }
 }
