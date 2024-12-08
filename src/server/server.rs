@@ -230,48 +230,41 @@ impl Server {
             self.send_nack(nack, routing_header.get_reversed(), session_id);
             return;
         }
-
+        println!("Reassembly");
         ///Fragment reassembly
         // Check if it exists already
         if let Some(reassembling_message) = self.reassembling_messages.get_mut(&session_id) {
-            let offset = fragment.fragment_index as usize * 128;
+            let offset = (fragment.fragment_index-1) as usize * 128;
 
             // Check for valid fragment index and length
             if offset + fragment.length as usize > reassembling_message.capacity()
                 || fragment.length as usize > 128
                     && fragment.fragment_index != fragment.total_n_fragments - 1
             {
+                println!("Nack");
                 // Send Nack and potentially clear the reassembling message
                 // ... error handling logic ...
                 return;
             }
 
+            println!("Copy");
             // Copy data to the correct offset in the vector.
             reassembling_message[offset..offset + fragment.length as usize]
                 .copy_from_slice(&fragment.data[..fragment.length as usize]);
 
+            println!("N fragments + current fragment length{}", fragment.total_n_fragments*128 + fragment.length as u64);
             // Check if all fragments have been received
-            if reassembling_message.len() == reassembling_message.capacity() {
-                /// Message reassembled!
-                // Message Processing
-                let reassembled_data = reassembling_message.clone(); // Take ownership of the data
-                self.reassembling_messages.remove(&session_id); // Remove from map
-                self.process_reassembled_message(reassembled_data, routing_header.hops[0]);
 
-                // Send Ack
-                let ack = Ack {
-                    fragment_index: fragment.fragment_index,
-                };
-                self.send_ack(ack, routing_header.get_reversed(), session_id);
-            }
-        } else {
-            // New message, create a new entry in the HashMap.
-            let mut reassembling_message = vec![0; fragment.total_n_fragments as usize * 128];
-            reassembling_message[0..fragment.length as usize]
-                .copy_from_slice(&fragment.data[..fragment.length as usize]);
-            self.reassembling_messages
-                .insert(session_id, reassembling_message);
+            //self.if_all_fragments_received_process(reassembling_message.clone(), &fragment, session_id, routing_header); Doesnt work now but it will be xD
+            return
         }
+
+        // New message, create a new entry in the HashMap.
+        let mut reassembling_message = vec![0; fragment.total_n_fragments as usize * 128];
+        reassembling_message[0..fragment.length as usize]
+            .copy_from_slice(&fragment.data[..fragment.length as usize]);
+        self.reassembling_messages
+            .insert(session_id, reassembling_message);
     }
 
     fn process_reassembled_message(&mut self, data: Vec<u8>, src_id: NodeId) {
@@ -291,6 +284,26 @@ impl Server {
             Err(e) => println!("Dio porco, {:?}", e),
         }
         println!("We did it");
+    }
+
+    fn if_all_fragments_received_process(&mut self, message: Vec<u8>, current_fragment: &Fragment, session_id: u64, routing_header: SourceRoutingHeader) -> bool {
+        // Message Processing
+
+        if((message.len() as u64) == (current_fragment.total_n_fragments*128 + current_fragment.length as u64)
+            && current_fragment.fragment_index == current_fragment.total_n_fragments)
+        {
+            let reassembled_data = message.clone(); // Take ownership of the data
+            self.reassembling_messages.remove(&session_id); // Remove from map
+            self.process_reassembled_message(reassembled_data, routing_header.hops[0]);
+
+            // Send Ack
+            let ack = Ack {
+                fragment_index: current_fragment.fragment_index,
+            };
+            self.send_ack(ack, routing_header.get_reversed(), session_id);
+            return true;
+        }
+        false
     }
 
     ///Common functions
