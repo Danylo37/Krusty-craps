@@ -163,8 +163,8 @@ impl KrustyCrapDrone {
         // If the random number is less than PDR, drop the packet (send a Nack 'Dropped')
         // And send the 'PacketDropped' event to the simulation controller
         if rand::rng().random_range(0.0..1.0) < self.pdr {
-            self.send_nack(NackType::Dropped, fragment.fragment_index, routing_header, session_id);
             self.send_event(DroneEvent::PacketDropped(packet));
+            self.send_nack(NackType::Dropped, fragment.fragment_index, routing_header, session_id);
             return;
         }
 
