@@ -1,9 +1,9 @@
-use crate::tests::{
-    test_fragments::*,
-    test_flooding::*,
+use crate::{
+    tests::test_flooding::*,
+    drone::KrustyCrapDrone
 };
+use wg_2024::tests::*;
 
-use crate::drones::KrustyCrapDrone;
 
 #[cfg(test)]
 

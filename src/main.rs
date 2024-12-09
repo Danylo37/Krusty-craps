@@ -1,4 +1,4 @@
-mod drones;
+mod drone;
 
 //Mod components
 mod network_initializer;

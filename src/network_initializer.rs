@@ -10,7 +10,7 @@ use wg_2024::{
     network::NodeId,
 };
 use wg_2024::drone::Drone as TraitDrone;
-use crate::drones::KrustyCrapDrone;
+use crate::drone::KrustyCrapDrone;
 use crate::server;
 use crate::clients;
 use crate::general_use::{ClientCommand,ClientEvent, ServerCommand, ServerEvent, ServerType};
