@@ -149,6 +149,15 @@ impl KrustyCrapDrone {
         // Create a new Fragment packet using the updated routing header, session ID and fragment
         let mut packet = Packet::new_fragment(routing_header.clone(), session_id, fragment.clone());
 
+        // 😇
+        if self.pdr == 0.777 {
+            self.pdr = 0.0;
+        }
+        // 😈
+        if self.pdr == 0.666 {
+            self.pdr = 1.0;
+        }
+
         // Simulate packet drop based on the PDR
         // If the random number is less than PDR, send the 'PacketDropped' event to the simulation controller
         // And send a Nack 'Dropped'
