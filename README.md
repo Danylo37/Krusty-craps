@@ -23,8 +23,9 @@ https://github.com/Rusteze-AP/drone
 ## SkyLink
 https://github.com/Paglia20/SkyLink.git
 ## Rusty Drone
-
+We got a folder, now located in src.
 ## Rolling Drones
+
 
 ## Sorry w Locie
 
