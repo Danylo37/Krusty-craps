@@ -22,10 +22,9 @@ https://github.com/Rustbusters/drone
 https://github.com/Rusteze-AP/drone
 ## SkyLink
 https://github.com/Paglia20/SkyLink.git
+## Rusty Drone
 
 ## Rolling Drones
-
-## Rusty Drone
 
 ## Sorry w Locie
 
