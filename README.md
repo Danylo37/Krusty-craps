@@ -1,5 +1,5 @@
 # WG REPO
-The description of the project, and the protocols are all in this repo, moreover here we have some of the libraries that we needed to use.
+The description of the project, the protocols, the examples and the tests are all in this repo, moreover here we have some of the libraries that we needed to use.
 
 The **link** to the repo is: https://github.com/WGL-2024/WGL_repo_2024
 
@@ -16,9 +16,10 @@ https://github.com/daw-dev/bagel-bomber.git
 https://github.com/RustAndFurious/RF_drone
 ## Fungi
 https://github.com/Fungi-B-D/Fungi-Drone
+## Rust Busters
+https://github.com/Rustbusters/drone
 ## Rusty Drone
 ## SkyLink
 ## Rust
-## Rust Busters
 ## Sorry w Locie
 
