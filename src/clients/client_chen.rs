@@ -1,47 +1,54 @@
 use crate::general_use::{ClientCommand, ClientEvent, Query};
+use std::vec;
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use log::{info, debug, error, warn};
 use std::collections::{HashMap, HashSet};
+use serde_json::ser::State::Empty;
 use wg_2024::network::SourceRoutingHeader;
-use wg_2024::packet::NackType;
+use wg_2024::packet::{NackType, NodeType};
 use wg_2024::{
     network::NodeId,
     packet::{Ack, FloodRequest, FloodResponse, Fragment, Nack, Packet, PacketType},
 };
+use std::sync::{Arc, Mutex};
 
 pub struct ClientChen {
-    id: NodeId,                                   //general node id
+    id: NodeId ,                                   //general node id
+    type_: NodeType ,
     connected_drone_ids: Vec<NodeId>, //node ids (of the drones) which the client is connected
-    packet_send: HashMap<NodeId, Sender<Packet>>, //each NodeId <--> Sender to the node with NodeId = node1_id}
+    packet_send: HashMap<NodeId, Sender<Packet>>, //each NodeId <--> Sender to the connected_node with NodeId = node1_id
     //so we have different Senders of packets, each is maybe a clone of a Sender<Packet> that
     //sends to a same receiver of a Node
     packet_recv: Receiver<Packet>, //Receiver of this Client, it's unique, the senders to this Receiver are clones of each others.
     controller_send: Sender<ClientEvent>, //the Receiver<ClientEvent> will be in Simulation Controller
     controller_recv: Receiver<ClientCommand>, //the Sender<ClientCommand> will be in Simulation Controller
-    topology: HashMap<NodeId, HashSet<NodeId>>, //it is a map that NodeId <--> set of neighbors of NodeId
-    path_traces: HashMap<NodeId, HashSet<Vec<NodeId>>>, //it is maybe a map that for each destination we have a set of paths that
-                                                        //leads to them
+    path_traces: HashMap<NodeId, HashSet<Vec<(NodeId, NodeType)>>>, //it is maybe a map that for each destination we have a set of paths that //leads to them
+    flood_id: u64,
+    session_id: Arc<Mutex<u64>>,
 }
 impl ClientChen {
     pub fn new(
         id: NodeId,
+        type_: NodeType,
         connected_drone_ids: Vec<NodeId>,
         packet_send: HashMap<NodeId, Sender<Packet>>,
         packet_recv: Receiver<Packet>,
         controller_send: Sender<ClientEvent>,
         controller_recv: Receiver<ClientCommand>,
-        topology: HashMap<NodeId, HashSet<NodeId>>,
-        path_traces: HashMap<NodeId, HashSet<Vec<NodeId>>>,
+        path_traces: HashMap<NodeId, HashSet<Vec<(NodeId, NodeType)>>>,
+        session_id: Arc<Mutex<u64>>,
     ) -> Self {
         Self {
             id,
+            type_,
             connected_drone_ids,
             packet_send,
             packet_recv,
             controller_send,
             controller_recv,
-            topology,
             path_traces,
+            flood_id: 0,   //initial value to be 0 for every new client
+            session_id,
         }
     }
 
@@ -49,7 +56,7 @@ impl ClientChen {
         loop {
             select_biased! {
                 recv(self.controller_recv) -> command_res => {
-                    /*if let Ok(command) = command_res {
+                    if let Ok(command) = command_res {
                         match command {
                             ClientCommand::AddSender(node_id, sender) => {   //add a sender to a node with id = node_id
                                 self.packet_send.insert(node_id, sender);
@@ -57,9 +64,16 @@ impl ClientChen {
                             ClientCommand::RemoveSender(node_id) => {
                                 self.packet_send.remove(&node_id);
                             }
-                            
+                            ClientCommand::AskTypeTo(NodeId) => {
+                                self.ask_server_type(NodeId)
+                            },
+                            ClientCommand::StartFlooding => {
+                                self.do_flooding();
+                            }
+                            ,
+
                         }
-                    }*/
+                    }
                 },
                 recv(self.packet_recv) -> packet_res => {
                     if let Ok(packet) = packet_res {
@@ -76,31 +90,40 @@ impl ClientChen {
         }
     }
 
-///////////////////////HANDLING RECEIVING PACKETS
+    ///////////////////////HANDLING RECEIVING PACKETS
     //handling ack/nack
     pub fn handle_nack(&mut self, nack: Nack) {
         let type_of_nack = nack.nack_type;
         match type_of_nack {
-            NackType::ErrorInRouting(node_id) => self.handle_error_in_routing(),
+            NackType::ErrorInRouting(node_id) => self.handle_error_in_routing(node_id),
             NackType::DestinationIsDrone => self.handle_destination_is_drone(),
             NackType::Dropped => self.handle_packdrop(),
-            NackType::UnexpectedRecipient(node_id) => self.handle_unexpected_recipient(),
+            NackType::UnexpectedRecipient(node_id) => self.handle_unexpected_recipient(node_id),
         }
     }
 
-    pub fn handle_error_in_routing(&mut self) {
-        self.discover_new_route();
+    pub fn handle_error_in_routing(&mut self, node_id: NodeId) {
+        self.removal_node(node_id);
+        self.compute_new_route_to(node_id);
+    }
+
+    pub fn removal_node(&mut self, node_id: NodeId) {
+        for (_, paths_to_node) in self.path_traces.iter_mut() {
+            paths_to_node.retain(|path| !path.iter().any(|&(n, _)| n == node_id));
+        }
     }
 
     pub fn handle_destination_is_drone(&mut self) {
         info!("Invalid destination, change destination");
     }
 
-    pub fn handle_packdrop(&mut self) {
+    pub fn handle_pack_dropped(&mut self) {
         //send again the packet
     }
 
-    pub fn handle_unexpected_recipient(&mut self) {}
+    pub fn handle_unexpected_recipient(&mut self, node_id: NodeId) {
+
+    }
 
     pub fn handle_ack(&mut self, ack: Ack) {}
 
@@ -128,25 +151,36 @@ impl ClientChen {
     pub fn register_to_server(&mut self, server_node_id: NodeId) {
     }
 
+    pub fn do_flooding(&mut self) {
+        // Initialize the flood request with the current flood_id, id, and node type
+        let flood_request = FloodRequest::initialize(self.flood_id, self.id, NodeType::Client);
 
-    pub fn eliminate_drone(&mut self, drone_id: NodeId) {
-        //remove from the connected drones if it is in the connected drones
-        self.connected_drone_ids.retain(|&id| id != drone_id);
+        // Acquire the lock on the session_id and get its value
+        let session_id = self.session_id.lock().unwrap().clone();
 
-        //remove from the topology and from the hashsets of the other drones
-        self.topology.remove(&drone_id);
-        for (_, neighbors) in self.topology.iter_mut() {
-            neighbors.remove(&drone_id);
+        // Prepare the packet with the current session_id and flood_request
+        let packet = Packet::new_flood_request(SourceRoutingHeader::empty_route(), session_id, flood_request);
+
+        // Send the packet to each connected drone
+        for &node_id in self.connected_drone_ids.iter() {
+            self.send_packet_to_connected_drone(node_id, packet.clone()); // assuming `send_packet_to_connected_drone` takes a cloned packet
         }
+    }
+    pub fn update_routing(&mut self) {
+        // Increment the flood_id
+        self.flood_id += 1;
 
-        //remove the sender to it if there is
-        self.packet_send.remove(&drone_id);
+        // Lock the session_id and increment it
+        let mut session_id = self.session_id.lock().unwrap();
+        *session_id += 1;
+
+        //send a flood request to the connected_drones
+        self.do_flooding();
     }
 
-    pub fn discover_new_route(&mut self) {
-        //send a flood request to the connected_drones
+    pub fn update_routing_info(&mut self, node_id: NodeId) {
+
     }
 
 
 }
-
