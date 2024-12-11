@@ -196,7 +196,7 @@ impl Server {
             //Preparing data of fragment
             let mut data:[u8;128] = [0;128];
             if((i+1)*128>response_in_vec_bytes.len()){
-                data = response_in_vec_bytes[i*128..response_in_vec_bytes.len()].try_into().unwrap(); ///ERROr
+                data = response_in_vec_bytes[i*128..response_in_vec_bytes.len()].try_into().unwrap(); ///ERROr  //Not use try_into() for some reaason??
             }else{
                 data = response_in_vec_bytes[i*128..(1+i)*128].try_into().unwrap();
             }
