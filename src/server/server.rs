@@ -189,16 +189,21 @@ impl Server {
 
     ///FRAGMENT
 
-    pub fn send_fragments(&self, id_fragment: u64, session_id: u64, n_fragments: usize, response_in_vec_bytes: &[u8], header: SourceRoutingHeader) {
+    pub fn send_fragments(&self, session_id: u64, n_fragments: usize, response_in_vec_bytes: &[u8], header: SourceRoutingHeader) {
 
         for i in 0..n_fragments{
 
             //Preparing data of fragment
-            let data:[u8;128] = response_in_vec_bytes[i*128..(1+i)*128].try_into().unwrap();
+            let mut data:[u8;128] = [0;128];
+            if((i+1)*128>response_in_vec_bytes.len()){
+                data = response_in_vec_bytes[i*128..response_in_vec_bytes.len()].try_into().unwrap(); ///ERROr
+            }else{
+                data = response_in_vec_bytes[i*128..(1+i)*128].try_into().unwrap();
+            }
 
             //Generating fragment
             let fragment = Fragment::new(
-                id_fragment,
+                i as u64,
                 n_fragments as u64,
                 data,
             );
@@ -219,7 +224,7 @@ impl Server {
         routing_header: SourceRoutingHeader,
         session_id: u64,
     ) {
-        println!("Hello");
+
         // Packet Verification
         if self.id != routing_header.hops[routing_header.hop_index] {
             // Send Nack (UnexpectedRecipient)
@@ -230,41 +235,80 @@ impl Server {
             self.send_nack(nack, routing_header.get_reversed(), session_id);
             return;
         }
-        println!("Reassembly");
+
+        //Getting vec of data from fragment
+        let mut data_to_add :Vec<u8> = fragment.data.to_vec();
+        data_to_add.truncate(fragment.length as usize);
+
         ///Fragment reassembly
         // Check if it exists already
         if let Some(reassembling_message) = self.reassembling_messages.get_mut(&session_id) {
-            let offset = (fragment.fragment_index-1) as usize * 128;
+            let offset = reassembling_message.len();
+            println!("Qua");
 
             // Check for valid fragment index and length
+            ///????????To check the row below
+            ///                 ///????????To check the row below
             if offset + fragment.length as usize > reassembling_message.capacity()
-                || fragment.length as usize > 128
-                    && fragment.fragment_index != fragment.total_n_fragments - 1
             {
                 println!("Nack");
                 // Send Nack and potentially clear the reassembling message
                 // ... error handling logic ...
                 return;
+
+            }else{
+
+                println!("Copy");
+                // Copy data to the correct offset in the vector.
+                reassembling_message.extend_from_slice(&data_to_add);
+
+                // Check if all fragments have been received
+                let reassembling_message_clone = reassembling_message.clone();
+                println!("N fragments + current fragment length{}", fragment.total_n_fragments*128 + fragment.length as u64);
+                self.if_all_fragments_received_process(&reassembling_message_clone, &fragment, session_id, routing_header);
+
             }
 
-            println!("Copy");
-            // Copy data to the correct offset in the vector.
-            reassembling_message[offset..offset + fragment.length as usize]
-                .copy_from_slice(&fragment.data[..fragment.length as usize]);
+        }else {
+            println!("Qui");
+            //Check if it is only 1 fragment
+            if !self.if_all_fragments_received_process(&data_to_add, &fragment, session_id, routing_header)
+            {
+                // New message, create a new entry in the HashMap.
+                let mut reassembling_message = Vec::with_capacity(fragment.total_n_fragments as usize * 128);
 
-            println!("N fragments + current fragment length{}", fragment.total_n_fragments*128 + fragment.length as u64);
-            // Check if all fragments have been received
+                //Copying data
+                reassembling_message.extend_from_slice(&data_to_add);
 
-            //self.if_all_fragments_received_process(reassembling_message.clone(), &fragment, session_id, routing_header); Doesnt work now but it will be xD
-            return
+                //Inserting message for future fragments
+                self.reassembling_messages
+                    .insert(session_id, reassembling_message.clone());
+            }
         }
 
-        // New message, create a new entry in the HashMap.
-        let mut reassembling_message = vec![0; fragment.total_n_fragments as usize * 128];
-        reassembling_message[0..fragment.length as usize]
-            .copy_from_slice(&fragment.data[..fragment.length as usize]);
-        self.reassembling_messages
-            .insert(session_id, reassembling_message);
+    }
+
+
+    fn if_all_fragments_received_process(&mut self, message: &Vec<u8>, current_fragment: &Fragment, session_id: u64, routing_header: SourceRoutingHeader) -> bool {
+        // Message Processing
+
+        println!("Trying sending");
+        println!("Message length {} n_fragments {} current.fragment length {}, fragment_index: {}", message.len(), current_fragment.total_n_fragments, current_fragment.length, current_fragment.fragment_index );
+        if((message.len() as u64) == ((current_fragment.total_n_fragments-1)*128 + current_fragment.length as u64))
+        {
+            println!("Sending back");
+            let reassembled_data = message.clone(); // Take ownership of the data
+            self.reassembling_messages.remove(&session_id); // Remove from map
+            self.process_reassembled_message(reassembled_data, routing_header.hops[0]);
+
+            // Send Ack
+            let ack = Ack {
+                fragment_index: current_fragment.fragment_index,
+            };
+            self.send_ack(ack, routing_header.get_reversed(), session_id);
+            return true;
+        }
+        false
     }
 
     fn process_reassembled_message(&mut self, data: Vec<u8>, src_id: NodeId) {
@@ -283,32 +327,11 @@ impl Server {
             },
             Err(e) => println!("Dio porco, {:?}", e),
         }
-        println!("We did it");
-    }
-
-    fn if_all_fragments_received_process(&mut self, message: Vec<u8>, current_fragment: &Fragment, session_id: u64, routing_header: SourceRoutingHeader) -> bool {
-        // Message Processing
-
-        if((message.len() as u64) == (current_fragment.total_n_fragments*128 + current_fragment.length as u64)
-            && current_fragment.fragment_index == current_fragment.total_n_fragments)
-        {
-            let reassembled_data = message.clone(); // Take ownership of the data
-            self.reassembling_messages.remove(&session_id); // Remove from map
-            self.process_reassembled_message(reassembled_data, routing_header.hops[0]);
-
-            // Send Ack
-            let ack = Ack {
-                fragment_index: current_fragment.fragment_index,
-            };
-            self.send_ack(ack, routing_header.get_reversed(), session_id);
-            return true;
-        }
-        false
+        println!("process reassemble finished");
     }
 
     ///Common functions
     pub fn give_type_back(&self, src_id: NodeId) {
-
 
         println!("We did it");
 
@@ -331,11 +354,10 @@ impl Server {
         let header = Self::create_source_routing(route); //To fill
 
         // Generating ids
-        let id_fragment = self.generate_unique_fragment_id();
         let session_id = self.generate_unique_session_id();
 
         //Send fragments
-        self.send_fragments(id_fragment, session_id, n_fragments, response_in_vec_bytes, header);
+        self.send_fragments(session_id, n_fragments, response_in_vec_bytes, header);
     }
 
     fn generate_unique_flood_id(&self) -> u64 {
@@ -347,11 +369,8 @@ impl Server {
     }
 
     fn find_path_to(&self, destination_id: NodeId) -> Vec<NodeId> {
+        ///To do ???
         vec![self.id, 2, 1, destination_id]
-    }
-
-    fn generate_unique_fragment_id(&self) -> u64 {
-        1
     }
 }
 
@@ -384,11 +403,10 @@ impl CommunicationServer for Server {
         let header = Self::create_source_routing(route); //To fill
 
         // Generating ids
-        let id_fragment = self.generate_unique_fragment_id();
         let session_id = self.generate_unique_session_id();
 
         //Send fragments
-        self.send_fragments(id_fragment, session_id, n_fragments,response_in_vec_bytes, header);
+        self.send_fragments(session_id, n_fragments,response_in_vec_bytes, header);
 
     }
 
@@ -413,9 +431,8 @@ impl CommunicationServer for Server {
         let header = Self::create_source_routing(route); //To fill
 
         // Generating fragment
-        let id_fragment = self.generate_unique_fragment_id();
         let session_id = self.generate_unique_session_id();
 
-        self.send_fragments(id_fragment, session_id, n_fragments,response_in_vec_bytes, header);
+        self.send_fragments(session_id, n_fragments,response_in_vec_bytes, header);
     }
 }
