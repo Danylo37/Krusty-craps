@@ -40,6 +40,9 @@ they are refining the tests, we'll wait for their drone.
 ### Note:
 In order to use the drones of the other groups as
 a library we just need to write in the Cargo.toml file:
+
 for example for our drone:
+
 [dependencies]
+
 krusty_drone = { git = "https://github.com/Danylo37/krusty_drone.git"}
