@@ -6,6 +6,16 @@ edition = "2021"
 [dependencies]
 wg_2024 = { git = "https://github.com/WGL-2024/WGL_repo_2024.git", features = ["serialize", "debug"] }
 krusty_drone = { git = "https://github.com/Danylo37/krusty_drone.git"}
+rustable_drone = { git = "https://github.com/SmL-Boi/RustableDroneLib.git"}
+bagel_bomber_drone = {git = "https://github.com/daw-dev/bagel-bomber.git"}
+rust_furious_drone = {git = "https://github.com/RustAndFurious/RF_drone.git"}
+fungi_drone = {git = "https://github.com/Fungi-B-D/Fungi-Drone.git"}
+rust_busters_drone = {git = "https://github.com/Rustbusters/drone.git"}
+rust_eze_drone = {git = "https://github.com/Rusteze-AP/drone.git"}
+sky_link = {git = "https://github.com/Paglia20/SkyLink.git"}
+rolling_drones = {git = "https://github.com/giorebecchi/RollingDrone.git"}
+
+#Bobry w locie they are refining the tests, we'll wait for their drone.
 
 crossbeam-channel = "0.5.13"
 toml = "0.8.19"
