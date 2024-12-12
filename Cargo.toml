@@ -5,22 +5,22 @@ edition = "2021"
 
 [dependencies]
 wg_2024 = { git = "https://github.com/WGL-2024/WGL_repo_2024.git", features = ["serialize", "debug"] }
-krusty_drone = { git = "https://github.com/Danylo37/krusty_drone.git"}
-rustable-drone = {git = "https://github.com/SmL-Boi/RustableDroneLib.git"}
-bagel_bomber = {git = "https://github.com/daw-dev/bagel-bomber.git"}
-
-RF_drone = {git = "https://github.com/RustAndFurious/RF_drone.git"}
-fungi_drone = {git = "https://github.com/Fungi-B-D/Fungi-Drone.git"}
-rustbusters-drone = {git = "https://github.com/Rustbusters/drone.git"}
-rusteze_drone = {git = "https://github.com/Rusteze-AP/drone.git"}
-SkyLinksProg = {git = "https://github.com/Paglia20/SkyLink.git"}
-rolling_drone = {git = "https://github.com/giorebecchi/RollingDrone.git"}
-
-#Bobry w locie they are refining the tests, we'll wait for their drone.
-
 crossbeam-channel = "0.5.13"
 toml = "0.8.19"
 rand = "0.9.0-beta.1"
 serde_json = "1.0.133"
 serde = { version = "1.0.215", features = ["derive"] }
 log = "0.4.22"
+
+krusty_drone = { git = "https://github.com/Danylo37/krusty_drone.git"}
+rustable-drone = {git = "https://github.com/SmL-Boi/RustableDroneLib.git"}
+bagel_bomber = {git = "https://github.com/daw-dev/bagel-bomber.git"}
+RF_drone = {git = "https://github.com/RustAndFurious/RF_drone.git"}
+fungi_drone = {git = "https://github.com/Fungi-B-D/Fungi-Drone.git"}
+rustbusters-drone = {git = "https://github.com/Rustbusters/drone.git"}
+rusteze_drone = {git = "https://github.com/Rusteze-AP/drone.git"}
+SkyLinksProg = {git = "https://github.com/Paglia20/SkyLink.git"}
+rolling_drone = {git = "https://github.com/giorebecchi/RollingDrone.git"}
+bobry_w_locie = {git = "https://github.com/Seregno/Public_Bry_w_locie.git"}
+rusty_drones = {git = "https://github.com/matteo-dinoia/rusty-drones.git" }
+

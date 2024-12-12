@@ -15,8 +15,7 @@ https://github.com/Danylo37/krusty_drone.git
 We put here the **link** repos of the drones we bought:
 
 ## Rusty Drone
-We got a folder, now located in src. I'm now asking them for the link
-in order to import their drone as a library.
+https://github.com/matteo-dinoia/rusty-drones.git
 ## Rustable
 https://github.com/SmL-Boi/RustableDroneLib.git
 ## Bagel Bomber
@@ -34,8 +33,7 @@ https://github.com/Paglia20/SkyLink.git
 ## Rolling Drones
 https://github.com/giorebecchi/RollingDrone.git
 ## Bobry w locie
-they are refining the tests, we'll wait for their drone.
-
+https://github.com/Seregno/Public_Bry_w_locie.git
 
 ### Note:
 In order to use the drones of the other groups as
