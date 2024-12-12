@@ -154,8 +154,10 @@ impl Server {
         todo!()
     }
 
-    fn send_ack(&self, p0: Ack, p1: SourceRoutingHeader, p2: u64) {
-        todo!()
+    fn send_ack(&self, ack: Ack, routing_header: SourceRoutingHeader, session_id: u64) {
+        let packet= Self::create_packet(PacketType::Ack(ack), routing_header, session_id);
+        self.send_packet(packet); ///It is not printing "Ack reveived in client"
+
     }
 
     ///PACKET
@@ -196,9 +198,9 @@ impl Server {
             //Preparing data of fragment
             let mut data:[u8;128] = [0;128];
             if((i+1)*128>response_in_vec_bytes.len()){
-                data = response_in_vec_bytes[i*128..response_in_vec_bytes.len()].try_into().unwrap(); ///ERROr  //Not use try_into() for some reaason??
+                data[0..response_in_vec_bytes.len()].copy_from_slice(&response_in_vec_bytes[i*128..response_in_vec_bytes.len()]);
             }else{
-                data = response_in_vec_bytes[i*128..(1+i)*128].try_into().unwrap();
+                data.copy_from_slice(&response_in_vec_bytes[i*128..(1+i)*128]);
             }
 
             //Generating fragment
