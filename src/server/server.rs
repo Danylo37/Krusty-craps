@@ -1,103 +1,43 @@
-//I am quite good now
+//I am a god
 
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
-
 use wg_2024::{
     network::{NodeId, SourceRoutingHeader},
     packet::{
         Ack, FloodRequest, FloodResponse, Fragment, Nack, NackType, NodeType, Packet, PacketType,
     },
 };
-
 use crate::general_use::{Message, Query, Response, ServerCommand, ServerEvent, ServerType};
 
-#[derive(Debug)]
-pub struct Server {
-    //Basic data
-    pub id: NodeId,
-    pub server_type: ServerType,
-    pub connected_drone_ids: Vec<NodeId>,
-    pub flood_ids: HashSet<u64>,
+///SERVER TRAIT
+pub trait Server{
+    fn get_from_controller_command(&mut self) -> &mut Receiver<ServerCommand>;
+    fn get_packet_recv(&mut self) -> &mut Receiver<Packet>;
+    fn get_packet_send(&mut self) -> &mut HashMap<NodeId, Sender<Packet>>;
+    fn get_packet_send_not_mutable(&self) -> &HashMap<NodeId, Sender<Packet>>;
+    fn get_id(&self) -> NodeId;
+    fn get_reassembling_messages(&mut self) -> &mut HashMap<u64, Vec<u8>>;
+    fn get_server_type(&self) -> ServerType;
 
-    //Channels
-    pub to_controller_event: Sender<ServerEvent>,
-    pub from_controller_command: Receiver<ServerCommand>,
-    pub packet_recv: Receiver<Packet>,
-    pub packet_send: HashMap<NodeId, Sender<Packet>>,
-
-    //Server data
-    pub list_users: HashMap<String, NodeId>,
-    pub reassembling_messages: HashMap<u64, Vec<u8>>,
-    pub messages: Vec<Message>,
-}
-
-///    Node Functions:
-/// new
-/// run
-/// handle_flood_request
-/// send_flood_response
-/// handle_nack
-/// handle_ack
-/// handle_fragment
-
-//     Server Functions
-// discovery
-// reassemble_fragment
-// send_back_type
-
-///Communication Server functions
-pub trait CommunicationServer {
-    fn add_client(&mut self, nickname: String, client_id: NodeId);
-    fn give_list_back(&self, client_id: NodeId);
-    fn forward_message_to(&self, nickname: String, message: Message);
-}
-
-///Content Server functions
-pub trait ContentServer {}
-
-impl Server {
-    pub fn new(
-        id: NodeId,
-        server_type: ServerType,
-        connected_drone_ids: Vec<NodeId>,
-        to_controller_event: Sender<ServerEvent>,
-        from_controller_command: Receiver<ServerCommand>,
-        packet_recv: Receiver<Packet>,
-        packet_send: HashMap<NodeId, Sender<Packet>>,
-    ) -> Self {
-        Server {
-            id,
-            server_type,
-            connected_drone_ids,
-            to_controller_event,
-            from_controller_command,
-            packet_recv,
-            packet_send,
-            list_users: HashMap::new(),
-            flood_ids: Default::default(),
-            reassembling_messages: Default::default(),
-            messages: Vec::new(),
-        }
-    }
-    pub fn run(&mut self) {
+    fn run(&mut self){
         loop {
             select_biased! {
-                recv(self.from_controller_command) -> command_res => {
+                recv(self.get_from_controller_command()) -> command_res => {
                     if let Ok(command) = command_res {
                         match command {
                             ServerCommand::AddSender(id, sender) => {
-                                self.packet_send.insert(id, sender);
+                                self.get_packet_send().insert(id, sender);
 
                             }
                             ServerCommand::RemoveSender(id) => {
-                                self.packet_send.remove(&id);
+                                self.get_packet_send().remove(&id);
                             }
                         }
                     }
                 },
-                recv(self.packet_recv) -> packet_res => {
+                recv(self.get_packet_recv()) -> packet_res => {
                     if let Ok(packet) = packet_res {
                         match packet.pack_type {
                             PacketType::Nack(nack) => self.handle_nack(nack),
@@ -112,11 +52,11 @@ impl Server {
         }
     }
 
-    ///FLOOD
-    pub fn discovery(&self) {
+    //FLOOD
+    fn discover(&mut self) {
         let flood_request = FloodRequest::initialize(
             self.generate_unique_flood_id(), // Replace with your ID generation
-            self.id,
+            self.get_id(),
             NodeType::Server,
         );
 
@@ -126,46 +66,43 @@ impl Server {
             flood_request.clone(),
         );
 
-        for sender in self.packet_send.values() {
+        for sender in self.get_packet_send().values() {
             if let Err(e) = sender.send(packet.clone()) {
                 eprintln!("Failed to send FloodRequest: {:?}", e);
             }
         }
     }
-    fn handle_flood_request(&mut self, flood_request: FloodRequest, session_id: u64) {}
 
-    fn handle_flood_response(&self, p0: FloodResponse, p1: u64) {
-        todo!()
+    fn handle_flood_request(&mut self, flood_request: FloodRequest, session_id: u64){
+        todo!();
+    }
+    fn handle_flood_response(&self, flood_response: FloodResponse, session_id: u64){
+        todo!();
+    }
+    fn send_flood_response(){
+        todo!();
     }
 
-    fn send_flood_response() {}
-
-
-
-    ///NACK
-    fn handle_nack(&mut self, nack: Nack) {}
-
-    fn send_nack(&self, p0: Nack, p1: SourceRoutingHeader, p2: u64) {
-        todo!()
+    //NACK
+    fn handle_nack(&mut self, nack: Nack){
+        todo!();
+    }
+    fn send_nack(&self, p0: Nack, p1: SourceRoutingHeader, p2: u64){
+        todo!();
     }
 
-    ///ACK
-    fn handle_ack(&mut self, _ack: Ack) {
-        todo!()
+    //ACK
+    fn handle_ack(&mut self, _ack: Ack){
+        todo!();
     }
-
     fn send_ack(&self, ack: Ack, routing_header: SourceRoutingHeader, session_id: u64) {
         let packet= Self::create_packet(PacketType::Ack(ack), routing_header, session_id);
-        self.send_packet(packet); ///It is not printing "Ack reveived in client"
-
+        self.send_packet(packet);
+        //It is not printing "Ack reveived in client"
     }
 
-    ///PACKET
-    fn create_packet(
-        pack_type: PacketType,
-        routing_header: SourceRoutingHeader,
-        session_id: u64,
-    ) -> Packet {
+    //PACKET
+    fn create_packet(pack_type: PacketType, routing_header: SourceRoutingHeader, session_id: u64, ) -> Packet {
         Packet {
             pack_type,
             routing_header,
@@ -175,64 +112,32 @@ impl Server {
 
     fn send_packet(&self, packet: Packet) {
         let first_carrier = self
-            .packet_send
+            .get_packet_send_not_mutable()
             .get(&packet.routing_header.hops[1])
             .unwrap();
         first_carrier.send(packet).unwrap();
     }
 
-    ///HEADER
-    fn create_source_routing(route: Vec<NodeId>) -> SourceRoutingHeader {
+    fn find_path_to(&self, destination_id: NodeId) -> Vec<NodeId>{
+        todo!();
+    }
+
+    fn create_source_routing(route: Vec<NodeId>) -> SourceRoutingHeader{
         SourceRoutingHeader {
             hop_index: 1,
             hops: route,
         }
     }
 
-    ///FRAGMENT
+    //FRAGMENT TO DECIDE IF IMPLEMENTING DEFAULT FOR EACH ONE
 
-    pub fn send_fragments(&self, session_id: u64, n_fragments: usize, response_in_vec_bytes: &[u8], header: SourceRoutingHeader) {
-
-        for i in 0..n_fragments{
-
-            //Preparing data of fragment
-            let mut data:[u8;128] = [0;128];
-            if((i+1)*128>response_in_vec_bytes.len()){
-                data[0..response_in_vec_bytes.len()].copy_from_slice(&response_in_vec_bytes[i*128..response_in_vec_bytes.len()]);
-            }else{
-                data.copy_from_slice(&response_in_vec_bytes[i*128..(1+i)*128]);
-            }
-
-            //Generating fragment
-            let fragment = Fragment::new(
-                i as u64,
-                n_fragments as u64,
-                data,
-            );
-
-            //Generating packet
-            let packet = Self::create_packet(
-                PacketType::MsgFragment(fragment),
-                header.clone(),
-                session_id,
-            );
-
-            self.send_packet(packet);
-        }
-    }
-    fn handle_fragment(
-        &mut self,
-        fragment: Fragment,
-        routing_header: SourceRoutingHeader,
-        session_id: u64,
-    ) {
-
+    fn handle_fragment(&mut self, fragment: Fragment, routing_header: SourceRoutingHeader, session_id: u64, ){
         // Packet Verification
-        if self.id != routing_header.hops[routing_header.hop_index] {
+        if self.get_id() != routing_header.hops[routing_header.hop_index] {
             // Send Nack (UnexpectedRecipient)
             let nack = Nack {
                 fragment_index: fragment.fragment_index,
-                nack_type: NackType::UnexpectedRecipient(self.id),
+                nack_type: NackType::UnexpectedRecipient(self.get_id()),
             };
             self.send_nack(nack, routing_header.get_reversed(), session_id);
             return;
@@ -244,7 +149,7 @@ impl Server {
 
         ///Fragment reassembly
         // Check if it exists already
-        if let Some(reassembling_message) = self.reassembling_messages.get_mut(&session_id) {
+        if let Some(reassembling_message) = self.get_reassembling_messages().get_mut(&session_id) {
             let offset = reassembling_message.len();
             println!("Qua");
 
@@ -283,13 +188,11 @@ impl Server {
                 reassembling_message.extend_from_slice(&data_to_add);
 
                 //Inserting message for future fragments
-                self.reassembling_messages
+                self.get_reassembling_messages()
                     .insert(session_id, reassembling_message.clone());
             }
         }
-
     }
-
 
     fn if_all_fragments_received_process(&mut self, message: &Vec<u8>, current_fragment: &Fragment, session_id: u64, routing_header: SourceRoutingHeader) -> bool {
         // Message Processing
@@ -300,7 +203,7 @@ impl Server {
         {
             println!("Sending back");
             let reassembled_data = message.clone(); // Take ownership of the data
-            self.reassembling_messages.remove(&session_id); // Remove from map
+            self.get_reassembling_messages().remove(&session_id); // Remove from map
             self.process_reassembled_message(reassembled_data, routing_header.hops[0]);
 
             // Send Ack
@@ -312,33 +215,44 @@ impl Server {
         }
         false
     }
+    fn process_reassembled_message(&mut self, data: Vec<u8>, src_id: NodeId);
+    fn send_fragments(&self, session_id: u64, n_fragments: usize, response_in_vec_bytes: &[u8], header: SourceRoutingHeader) {
 
-    fn process_reassembled_message(&mut self, data: Vec<u8>, src_id: NodeId) {
-        match String::from_utf8(data.clone()) {
-            Ok(data_string) => match serde_json::from_str(&data_string) {
-                Ok(Query::AskType) => self.give_type_back(src_id),
-                Ok(Query::AddClient(nickname, node_id)) => self.add_client(nickname, node_id),
-                Ok(Query::AskListClients) => self.give_list_back(src_id),
-                Ok(Query::SendMessageTo(nickname, message)) => {
-                    self.forward_message_to(nickname, message)
-                }
-                Err(_) => {
-                    panic!("Damn, not the right struct")
-                }
-                _ => {}
-            },
-            Err(e) => println!("Dio porco, {:?}", e),
+        for i in 0..n_fragments{
+
+            //Preparing data of fragment
+            let mut data:[u8;128] = [0;128];
+            if((i+1)*128>response_in_vec_bytes.len()){
+                data[0..response_in_vec_bytes.len()].copy_from_slice(&response_in_vec_bytes[i*128..response_in_vec_bytes.len()]);
+            }else{
+                data.copy_from_slice(&response_in_vec_bytes[i*128..(1+i)*128]);
+            }
+
+            //Generating fragment
+            let fragment = Fragment::new(
+                i as u64,
+                n_fragments as u64,
+                data,
+            );
+
+            //Generating packet
+            let packet = Self::create_packet(
+                PacketType::MsgFragment(fragment),
+                header.clone(),
+                session_id,
+            );
+
+            self.send_packet(packet);
         }
-        println!("process reassemble finished");
     }
 
-    ///Common functions
-    pub fn give_type_back(&self, src_id: NodeId) {
 
+    //Common functions
+    fn give_type_back(&self, src_id: NodeId){
         println!("We did it");
 
         //Get data
-        let server_type = self.server_type;
+        let server_type = self.get_server_type();
 
         //Serializing type
         let response_as_string = serde_json::to_string(&server_type).unwrap();
@@ -365,76 +279,26 @@ impl Server {
     fn generate_unique_flood_id(&self) -> u64 {
         1
     }
-
     fn generate_unique_session_id(&self) -> u64 {
         1
     }
-
-    fn find_path_to(&self, destination_id: NodeId) -> Vec<NodeId> {
-        ///To do ???
-        vec![self.id, 2, 1, destination_id]
-    }
 }
 
-impl CommunicationServer for Server {
-    fn add_client(&mut self, nickname: String, client_id: NodeId) {
-        self.list_users.insert(nickname, client_id);
-    }
 
-    fn give_list_back(&self, client_id: NodeId) {
-
-        //Get list
-        let keys_list_clients = self.list_users.keys().cloned().collect();
-
-        //Creating data to send
-        let response = Response::ListUsers(keys_list_clients);
-
-        //Serializing message to send
-        let response_as_string = serde_json::to_string(&response).unwrap();
-        let response_in_vec_bytes = response_as_string.as_bytes();
-        let length_response = response_in_vec_bytes.len();
-
-        //Counting fragments
-        let mut n_fragments = length_response / 128+1;
-        if n_fragments == 0 {
-            n_fragments -= 1;
-        }
-
-        //Generating header
-        let route: Vec<NodeId> = self.find_path_to(client_id); //To implement findpath
-        let header = Self::create_source_routing(route); //To fill
-
-        // Generating ids
-        let session_id = self.generate_unique_session_id();
-
-        //Send fragments
-        self.send_fragments(session_id, n_fragments,response_in_vec_bytes, header);
-
-    }
-
-    fn forward_message_to(&self, nickname: String, message: Message) {
-
-        //Creating data to send
-        let response = Response::MessageFrom(nickname.clone(),message);
-
-        //Serializing message to send
-        let response_as_string = serde_json::to_string(&response).unwrap();
-        let response_in_vec_bytes = response_as_string.as_bytes();
-        let length_response = response_in_vec_bytes.len();
-
-        //Counting fragments
-        let mut n_fragments = length_response / 128+1;
-        if n_fragments == 0 {
-            n_fragments -= 1;
-        }
-
-        //Generating header
-        let route: Vec<NodeId> = self.find_path_to(*self.list_users.get(&nickname).unwrap()); //To implement findpath
-        let header = Self::create_source_routing(route); //To fill
-
-        // Generating fragment
-        let session_id = self.generate_unique_session_id();
-
-        self.send_fragments(session_id, n_fragments,response_in_vec_bytes, header);
-    }
+///Communication Server functions
+pub trait CommunicationServer {
+    fn add_client(&mut self, nickname: String, client_id: NodeId);
+    fn give_list_back(&self, client_id: NodeId);
+    fn forward_message_to(&self, nickname: String, message: Message);
 }
+
+///Content Server functions
+pub trait TextServer {
+
+}
+
+///Media server functions
+pub trait MediaServer {
+
+}
+
