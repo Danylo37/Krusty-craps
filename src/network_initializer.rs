@@ -9,10 +9,15 @@ use wg_2024::{
     controller::{DroneEvent},
     network::NodeId,
 };
+
 use wg_2024::drone::Drone as TraitDrone;
 use krusty_drone::drone::drone::KrustyCrapDrone;
-use crate::server;
+
+use crate::servers;
+use crate::servers::server::Server as ServerTrait;
+
 use crate::clients;
+
 use crate::general_use::{ClientCommand,ClientEvent, ServerCommand, ServerEvent, ServerType};
 use crate::simulation_controller::SimulationController;
 use crate::ui::start_ui;
@@ -123,7 +128,7 @@ impl NetworkInit {
                 match drone {
                     Ok(mut drone) => drone.run(),
                     Err(e) => panic!("{}",e),
-                }1
+                }
             });
         }
     }
@@ -176,7 +181,7 @@ impl NetworkInit {
 
             thread::spawn(move || {
 
-                let mut server = server::Server::new(
+                let mut server = servers::communication_server::CommunicationServer::new(
                     server.id,
                     ServerType::Communication,
                     Vec::new(),
