@@ -45,7 +45,11 @@ pub enum Query{
     SendMessageTo(String, Message),
 
     //To Content Server
-    GetMedia, //not sure if i have to ask for which media before or whaT else
+    //(Text)
+    AskListFiles,
+    AskFile(String),
+    //(Media)
+    AskMedia(String), // String is the reference found in the files
 }
 
 //Server -> Client
@@ -59,7 +63,12 @@ pub enum Response{
     ListUsers(Vec<String>),
 
     //From Content Server
-    GiveMedia,
+    //(Text)
+    ListFiles(Vec<String>),
+    File(String),
+    //(Media)
+    Media(String),
+
 }
 
 ///Material
