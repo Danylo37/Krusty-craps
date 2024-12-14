@@ -183,7 +183,6 @@ impl NetworkInit {
 
                 let mut server = servers::communication_server::CommunicationServer::new(
                     server.id,
-                    ServerType::Communication,
                     Vec::new(),
                     copy_contr_event,
                     server_get_command_recv,
