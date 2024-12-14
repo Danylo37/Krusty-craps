@@ -75,7 +75,8 @@ pub enum Response{
 #[derive(Deserialize, Serialize, Copy, Clone, Debug)]
 pub enum ServerType{
     Communication,
-    Content,
+    Text,
+    Media,
 }
 
 

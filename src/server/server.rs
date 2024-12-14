@@ -13,13 +13,17 @@ use crate::general_use::{Message, Query, Response, ServerCommand, ServerEvent, S
 
 ///SERVER TRAIT
 pub trait Server{
+    fn get_id(&self) -> NodeId;
+    fn get_server_type(&self) -> ServerType;
+    fn get_flood_id(&mut self) -> u64;
+    fn get_session_id(&mut self) -> u64;
+
     fn get_from_controller_command(&mut self) -> &mut Receiver<ServerCommand>;
     fn get_packet_recv(&mut self) -> &mut Receiver<Packet>;
     fn get_packet_send(&mut self) -> &mut HashMap<NodeId, Sender<Packet>>;
     fn get_packet_send_not_mutable(&self) -> &HashMap<NodeId, Sender<Packet>>;
-    fn get_id(&self) -> NodeId;
+
     fn get_reassembling_messages(&mut self) -> &mut HashMap<u64, Vec<u8>>;
-    fn get_server_type(&self) -> ServerType;
 
     fn run(&mut self){
         loop {
@@ -154,12 +158,10 @@ pub trait Server{
             println!("Qua");
 
             // Check for valid fragment index and length
-            ///????????To check the row below
-            ///                 ///????????To check the row below
             if offset + fragment.length as usize > reassembling_message.capacity()
             {
                 println!("Nack");
-                // Send Nack and potentially clear the reassembling message
+                //Maybe cancelling also message in reassembling_message
                 // ... error handling logic ...
                 return;
 
@@ -248,7 +250,7 @@ pub trait Server{
 
 
     //Common functions
-    fn give_type_back(&self, src_id: NodeId){
+    fn give_type_back(&mut self, src_id: NodeId){
         println!("We did it");
 
         //Get data
@@ -276,11 +278,22 @@ pub trait Server{
         self.send_fragments(session_id, n_fragments, response_in_vec_bytes, header);
     }
 
-    fn generate_unique_flood_id(&self) -> u64 {
-        1
+    fn generate_unique_flood_id(&mut self) -> u64 {
+        let counter_flood_id = self.get_flood_id();
+        let id = self.get_id();
+        match format!("{}{}", id, counter_flood_id).parse() {
+            Ok(id) => id,
+            Err(e) => panic!("{}, Not right number", e)
+        }
     }
-    fn generate_unique_session_id(&self) -> u64 {
-        1
+
+    fn generate_unique_session_id(&mut self) -> u64 {
+        let counter_flood_id = self.get_flood_id();
+        let id = self.get_id();
+        match format!("{}{}", id, counter_flood_id).parse() {
+            Ok(id) => id,
+            Err(e) => panic!("{}, Not right number", e)
+        }
     }
 }
 
@@ -288,8 +301,8 @@ pub trait Server{
 ///Communication Server functions
 pub trait CommunicationServer {
     fn add_client(&mut self, nickname: String, client_id: NodeId);
-    fn give_list_back(&self, client_id: NodeId);
-    fn forward_message_to(&self, nickname: String, message: Message);
+    fn give_list_back(&mut self, client_id: NodeId);
+    fn forward_message_to(&mut self, nickname: String, message: Message);
 }
 
 ///Content Server functions
