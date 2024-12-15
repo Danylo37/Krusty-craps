@@ -47,7 +47,7 @@ pub enum Query{
     //To Content Server
     //(Text)
     AskListFiles,
-    AskFile(String),
+    AskFile(u8),
     //(Media)
     AskMedia(String), // String is the reference found in the files
 }
@@ -69,6 +69,8 @@ pub enum Response{
     //(Media)
     Media(String),
 
+    //General Error
+    Err(String)
 }
 
 ///Material
