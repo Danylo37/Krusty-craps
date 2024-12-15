@@ -12,43 +12,8 @@ use crate::general_use::{Message, Query, Response, ServerCommand, ServerEvent, S
 use super::server::TextServer as CharTrait;
 use super::server::Server as MainTrait;
 
-//use super::content::TEXT;
-const TEXT: [&str; 6] = [
-    r#"Alcuni versi di Leopardi:
-Ma perchè dare al sole,
-Perchè reggere in vita
-Chi poi di quella consolar convenga?
-Se la vita è sventura,
-Perchè da noi si dura?
-Intatta luna, tale
-E’ lo stato mortale.
-Ma tu mortal non sei,
-E forse del mio dir poco ti cale."#,
+use super::content::TEXT;
 
-    "Una banana #Media[banana]",
-
-    "Non scegliere questo testo #Media[do_not_search_this_media]",
-
-    r#"Phrases by Lillo:
-- a lack of belief in free will is the antidote to hate and judgement
-- il disordine è tale finche non viene ordinato
-- if you have to ask if you’re a member of a group, you’re probably not."#,
-
-    r#"One of the best panoramas are next to us,
-just walk up on a mountain,
-sit in the middle of the forest and watch at the Sparkling snow #Media[sparkling_snow]"#,
-
-    r#"Bigfoot Sighting Report
-Location: Dense forest near Willow Creek, California
-Date and Time: December 12, 2024, 4:45 PM
-
-Image: #Media[big_foot]
-
-Report:
-While hiking along an isolated trail, approximately 5 miles from the nearest road, I encountered an unusual figure standing roughly 50 yards away in a clearing.
-The figure was enormous, standing between 7 and 8 feet tall, with broad shoulders and a heavily muscled frame.
-Its body appeared to be covered in dark, shaggy hair, likely black or very dark brown, and it moved with a distinct upright, bipedal gait."#,
-];
 #[derive(Debug)]
 pub struct TextServer{
 
@@ -119,21 +84,8 @@ impl TextServer{
 }
 
 impl MainTrait for TextServer{
-    fn process_reassembled_message(&mut self, data: Vec<u8>, src_id: NodeId){
-        match String::from_utf8(data.clone()) {
-            Ok(data_string) => match serde_json::from_str(&data_string) {
-                Ok(Query::AskType) => self.give_type_back(src_id),
-                Err(_) => {
-                    panic!("Damn, not the right struct")
-                }
-                _ => {}
-            },
-            Err(e) => println!("Dio porco, {:?}", e),
-        }
-        println!("process reassemble finished");
-    }
-
     fn get_id(&self) -> NodeId{ self.id }
+
     fn get_server_type(&self) -> ServerType{ ServerType::Text }
     fn get_flood_id(&mut self) -> u64{
         self.counter.0 += 1;
@@ -143,11 +95,92 @@ impl MainTrait for TextServer{
         self.counter.1 += 1;
         self.counter.1
     }
-
     fn get_from_controller_command(&mut self) -> &mut Receiver<ServerCommand>{ &mut self.from_controller_command }
+
     fn get_packet_recv(&mut self) -> &mut Receiver<Packet>{ &mut self.packet_recv }
     fn get_packet_send(&mut self) -> &mut HashMap<NodeId, Sender<Packet>>{ &mut self.packet_send }
     fn get_packet_send_not_mutable(&self) -> &HashMap<NodeId, Sender<Packet>>{ &self.packet_send }
-
     fn get_reassembling_messages(&mut self) -> &mut HashMap<u64, Vec<u8>>{ &mut self.reassembling_messages }
+
+    fn process_reassembled_message(&mut self, data: Vec<u8>, src_id: NodeId){
+        match String::from_utf8(data.clone()) {
+            Ok(data_string) => match serde_json::from_str(&data_string) {
+                Ok(Query::AskType) => self.give_type_back(src_id),
+
+                Ok(Query::AskListFiles) => self.give_list_back(src_id),
+                Ok(Query::AskFile(file_id)) => self.give_file_back(src_id, file_id),
+
+                Err(_) => {
+                    panic!("Damn, not the right struct")
+                }
+                _ => {}
+            },
+            Err(e) => println!("Dio porco, {:?}", e),
+        }
+        println!("process reassemble finished");
+    }
+}
+
+impl CharTrait for TextServer{
+    fn give_list_back(&mut self, client_id: NodeId) {
+
+        //Get list
+        let list_files = self.content.clone();
+
+        //Creating data to send
+        let response = Response::ListFiles(list_files);
+
+        //Serializing message to send
+        let response_as_string = serde_json::to_string(&response).unwrap();
+        let response_in_vec_bytes = response_as_string.as_bytes();
+        let length_response = response_in_vec_bytes.len();
+
+        //Counting fragments
+        let mut n_fragments = length_response / 128+1;
+        if n_fragments == 0 {
+            n_fragments -= 1;
+        }
+
+        //Generating header
+        let route: Vec<NodeId> = self.find_path_to(client_id);
+        let header = Self::create_source_routing(route);
+
+        // Generating ids
+        let session_id = self.generate_unique_session_id();
+
+        //Send fragments
+        self.send_fragments(session_id, n_fragments,response_in_vec_bytes, header);
+
+    }
+
+    fn give_file_back(&mut self, client_id: NodeId, file_id: u8) {
+
+        //Get file
+        let file:&String = self.content.get(file_id as usize).unwrap();
+
+        //Creating data to send
+        let response = Response::File(file.clone());
+
+        //Serializing message to send
+        let response_as_string = serde_json::to_string(&response).unwrap();
+        let response_in_vec_bytes = response_as_string.as_bytes();
+        let length_response = response_in_vec_bytes.len();
+
+        //Counting fragments
+        let mut n_fragments = length_response / 128+1;
+        if n_fragments == 0 {
+            n_fragments -= 1;
+        }
+
+        //Generating header
+        let route: Vec<NodeId> = self.find_path_to(client_id);
+        let header = Self::create_source_routing(route);
+
+        // Generating ids
+        let session_id = self.generate_unique_session_id();
+
+        //Send fragments
+        self.send_fragments(session_id, n_fragments,response_in_vec_bytes, header);
+
+    }
 }
