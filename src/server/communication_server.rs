@@ -59,24 +59,8 @@ impl CommunicationServer{
 }
 
 impl MainTrait for CommunicationServer{
-    fn process_reassembled_message(&mut self, data: Vec<u8>, src_id: NodeId){
-        match String::from_utf8(data.clone()) {
-            Ok(data_string) => match serde_json::from_str(&data_string) {
-                Ok(Query::AskType) => self.give_type_back(src_id),
-                Ok(Query::AddClient(nickname, node_id)) => self.add_client(nickname, node_id),
-                Ok(Query::AskListClients) => self.give_list_back(src_id),
-                Ok(Query::SendMessageTo(nickname, message)) => self.forward_message_to(nickname, message),
-                Err(_) => {
-                    panic!("Damn, not the right struct")
-                }
-                _ => {}
-            },
-                Err(e) => println!("Dio porco, {:?}", e),
-            }
-        println!("process reassemble finished");
-    }
-
     fn get_id(&self) -> NodeId{ self.id }
+
     fn get_server_type(&self) -> ServerType{ ServerType::Communication }
     fn get_flood_id(&mut self) -> u64{
         self.counter.0 += 1;
@@ -90,8 +74,25 @@ impl MainTrait for CommunicationServer{
     fn get_packet_recv(&mut self) -> &mut Receiver<Packet>{ &mut self.packet_recv }
     fn get_packet_send(&mut self) -> &mut HashMap<NodeId, Sender<Packet>>{ &mut self.packet_send }
     fn get_packet_send_not_mutable(&self) -> &HashMap<NodeId, Sender<Packet>>{ &self.packet_send }
-
     fn get_reassembling_messages(&mut self) -> &mut HashMap<u64, Vec<u8>>{ &mut self.reassembling_messages }
+
+    fn process_reassembled_message(&mut self, data: Vec<u8>, src_id: NodeId){
+        match String::from_utf8(data.clone()) {
+            Ok(data_string) => match serde_json::from_str(&data_string) {
+                Ok(Query::AskType) => self.give_type_back(src_id),
+
+                Ok(Query::AddClient(nickname, node_id)) => self.add_client(nickname, node_id),
+                Ok(Query::AskListClients) => self.give_list_back(src_id),
+                Ok(Query::SendMessageTo(nickname, message)) => self.forward_message_to(nickname, message),
+                Err(_) => {
+                    panic!("Damn, not the right struct")
+                }
+                _ => {}
+            },
+                Err(e) => println!("Dio porco, {:?}", e),
+            }
+        println!("process reassemble finished");
+    }
 
 }
 

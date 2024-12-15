@@ -1,4 +1,4 @@
-const TEXT: [&str; 6] = [
+pub const TEXT: [&str; 6] = [
     r#"Alcuni versi di Leopardi:
 Ma perchè dare al sole,
 Perchè reggere in vita
@@ -33,4 +33,18 @@ Report:
 While hiking along an isolated trail, approximately 5 miles from the nearest road, I encountered an unusual figure standing roughly 50 yards away in a clearing.
 The figure was enormous, standing between 7 and 8 feet tall, with broad shoulders and a heavily muscled frame.
 Its body appeared to be covered in dark, shaggy hair, likely black or very dark brown, and it moved with a distinct upright, bipedal gait."#,
+];
+
+
+pub const IMAGE_PATHS: [(&str, &str); 10] =  [
+    ("image1", "path/to/image1.jpeg"),
+    ("image2", "path/to/image2.jpeg"),
+    ("image3", "path/to/image3.jpeg"),
+    ("image4", "path/to/image4.jpeg"),
+    ("image5", "path/to/image5.jpeg"),
+    ("image6", "path/to/image6.jpeg"),
+    ("image7", "path/to/image7.jpeg"),
+    ("image8", "path/to/image8.jpeg"),
+    ("image9", "path/to/image9.jpeg"),
+    ("image10", "path/to/image10.jpeg"),
 ];
