@@ -1,10 +1,11 @@
 //I say i did a good job damn lillo
 
+use std::hash::{Hash, Hasher};
 use crossbeam_channel::Sender;
 use serde::{Deserialize, Serialize};
 
 use wg_2024::{
-    packet::Packet,
+    packet::{Packet, NodeType},
     network::NodeId,
 };
 
@@ -31,6 +32,21 @@ pub enum ClientCommand {
 }
 pub enum ClientEvent{
 
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HashNodeType(pub NodeType);
+
+impl Hash for HashNodeType {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        (self.0 as u8).hash(state);
+    }
+}
+
+impl HashNodeType {
+    fn unwrap(self) -> NodeType {
+        self.0
+    }
 }
 
 //Queries (Client -> Server)
