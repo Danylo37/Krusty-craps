@@ -1,6 +1,6 @@
 //Mod components
 mod network_initializer;
-mod server;
+mod servers;
 mod clients;
 mod simulation_controller;
 mod general_use;
