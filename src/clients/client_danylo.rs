@@ -3,14 +3,13 @@ use std::collections::{HashMap, HashSet};
 
 use wg_2024::{
     network::{NodeId, SourceRoutingHeader},
-    packet::{Ack, FloodRequest, FloodResponse, Fragment, Nack, Packet, PacketType, NodeType},
+    packet::{Ack, FloodRequest, FloodResponse, Fragment, Nack, NodeType, Packet, PacketType},
 };
 
-use crate::general_use::{ClientCommand, ClientEvent, Query};
+use crate::general_use::{ClientCommand, ClientEvent, HashNodeType};
 
 pub struct ClientDanylo {
     id: NodeId,
-    connected_drone_ids: Vec<NodeId>,
     packet_send: HashMap<NodeId, Sender<Packet>>,
     packet_recv: Receiver<Packet>,
     controller_send: Sender<ClientEvent>,
@@ -18,13 +17,12 @@ pub struct ClientDanylo {
     session_ids: Vec<u64>,
     flood_ids: Vec<u64>,
     floods: HashMap<NodeId, HashSet<u64>>,
-    topology: HashMap<NodeId, HashSet<NodeId>>,
+    topology: HashMap<(NodeId, HashNodeType), HashSet<(NodeId, HashNodeType)>>,
 }
 
 impl ClientDanylo {
     pub fn new(
         id: NodeId,
-        connected_drone_ids: Vec<NodeId>,
         packet_send: HashMap<NodeId, Sender<Packet>>,
         packet_recv: Receiver<Packet>,
         controller_send: Sender<ClientEvent>,
@@ -32,7 +30,6 @@ impl ClientDanylo {
     ) -> Self {
         Self {
             id,
-            connected_drone_ids,
             packet_send,
             packet_recv,
             controller_send,
@@ -67,12 +64,19 @@ impl ClientDanylo {
                 },
                 recv(self.packet_recv) -> packet_res => {
                     if let Ok(packet) = packet_res {
-                        match packet.pack_type {
+                        match packet.pack_type.clone() {
                             PacketType::Ack(ack) => self.handle_ack(ack),
                             PacketType::Nack(nack) => self.handle_nack(nack),
                             PacketType::MsgFragment(fragment) => self.handle_fragment(fragment),
-                            PacketType::FloodRequest(flood_request) => self.handle_flood_request(flood_request),
-                            PacketType::FloodResponse(flood_response) => self.handle_flood_response(flood_response),
+                            PacketType::FloodRequest(flood_request) => self.handle_flood_request(flood_request, packet.session_id),
+                            PacketType::FloodResponse(flood_response) => {
+                                let initiator = flood_response.path_trace.first().unwrap().0;
+                                if initiator != self.id {
+                                    self.send_to_next_hop(packet);
+                                } else {
+                                    self.handle_flood_response(flood_response);
+                                }
+                            },
                         }
                     }
                 },
@@ -89,33 +93,165 @@ impl ClientDanylo {
     }
 
     fn handle_fragment(&self, _fragment: Fragment) {
-        println!("The fragment received");
-    }
-
-    fn handle_flood_request(&self, _flood_request: FloodRequest) {
         todo!()
     }
 
-    fn handle_flood_response(&self, _flood_response: FloodResponse) {
-        todo!()
+    fn handle_flood_request(&mut self, mut flood_request: FloodRequest, session_id: u64) {
+        // Add current drone to the flood request's path trace
+        flood_request.increment(self.id, NodeType::Drone);
+
+        let flood_id = flood_request.flood_id;
+        let initiator_id = flood_request.initiator_id;
+
+        // Check if the flood ID has already been received from this flood initiator
+        if self.floods.get(&initiator_id).map_or(false, |ids| ids.contains(&flood_id)) {
+            // Generate and send the flood response
+            let response = flood_request.generate_response(session_id);
+            self.send_to_next_hop(response);
+            return;
+        }
+
+        // If Flood ID has not yet been received from this flood initiator
+        self.floods
+            // Use the 'entry' method to get access to the entry with the key 'initiator_id'
+            .entry(initiator_id)
+            // If the entry doesn't exist, create a new 'HashSet' using 'or_insert_with'
+            .or_insert_with(HashSet::new)
+            // Insert 'flood_id' into the found or newly created 'HashSet'
+            .insert(flood_id);
+
+        // Check if there's a previous node (sender) in the flood path
+        // If the sender isn't found, print an error
+        let Some(sender_id) = self.get_prev_node_id(&flood_request.path_trace) else {
+            eprintln!("There's no previous node in the flood path.");
+            return;
+        };
+
+        // Get all neighboring nodes except the sender
+        let neighbors = self.get_neighbors_except(sender_id);
+
+        // If there are neighbors, forward the flood request to them
+        if !neighbors.is_empty() {
+            self.forward_flood_request(neighbors, flood_request, session_id);
+        } else {
+            // If no neighbors, generate and send a response instead
+            let response = flood_request.generate_response(session_id);
+            self.send_to_next_hop(response);
+        }
+    }
+
+    fn get_sender_of_next(&self, routing_header: SourceRoutingHeader) -> Option<&Sender<Packet>> {
+        // Attempt to retrieve the current hop ID from the routing header
+        // If it is missing, return `None` as we cannot proceed without it
+        let Some(current_hop_id) = routing_header.current_hop() else {
+            return None;
+        };
+
+        // Check if the current hop ID matches this drone's ID
+        // If it doesn't match, return `None` because this drone is not the expected recipient
+        if self.id != current_hop_id {
+            return None;
+        }
+
+        // Attempt to retrieve the next hop ID from the routing header
+        // If it is missing, return `None` as there is no valid destination to send the packet to
+        let Some(next_hop_id) = routing_header.next_hop() else {
+            return None;
+        };
+
+        // Use the next hop ID to look up the associated sender in the `packet_send` map
+        // Return a reference to the sender if it exists, or `None` if not found
+        self.packet_send.get(&next_hop_id)
+    }
+
+    fn send_to_next_hop(&self, mut packet: Packet) {
+        // Attempt to find the sender for the next hop
+        let Some(sender) = self.get_sender_of_next(packet.routing_header.clone()) else {
+            eprintln!("Error sending the packet to next hop.");
+            return;
+        };
+
+        // Increment the hop index in the routing header to reflect progress through the route
+        packet.routing_header.increase_hop_index();
+
+        // Attempt to send the updated fragment packet to the next hop
+        if sender.send(packet).is_err() {
+            eprintln!("Error sending the packet to next hop.");
+        }
+    }
+
+    fn get_prev_node_id(&self, path_trace: &Vec<(NodeId, NodeType)>) -> Option<NodeId> {
+        if path_trace.len() > 1 {
+            return Some(path_trace[path_trace.len() - 2].0);
+        }
+        None
+    }
+
+    fn get_neighbors_except(&self, exclude_id: NodeId) -> Vec<&Sender<Packet>> {
+        self.packet_send
+            .iter()
+            .filter(|(&node_id, _)| node_id != exclude_id)
+            .map(|(_, sender)| sender)
+            .collect()
+    }
+
+    fn forward_flood_request(
+        &self,
+        neighbors: Vec<&Sender<Packet>>,
+        request: FloodRequest,
+        session_id: u64)
+    {
+        // Iterate over each neighbor
+        for sender in neighbors {
+            // Create an empty routing header, because this is unnecessary in flood request
+            let routing_header = SourceRoutingHeader::empty_route();
+            // Create a new FloodRequest
+            let packet = Packet::new_flood_request(routing_header, session_id, request.clone());
+
+            // Attempt to send the updated fragment packet to the next hop.
+            if sender.send(packet.clone()).is_err() {
+                eprintln!("Error sending the packet to the neighbor.");
+            }
+        }
+    }
+
+    fn handle_flood_response(&mut self, flood_response: FloodResponse) {
+        let path = &flood_response.path_trace;
+
+        for i in 0..path.len() - 1 {
+            let current = (path[i].0, HashNodeType(path[i].1));
+            let next = (path[i + 1].0, HashNodeType(path[i + 1].1));
+
+            self.topology
+                .entry(current)
+                .or_insert_with(HashSet::new)
+                .insert(next);
+
+            self.topology
+                .entry(next)
+                .or_insert_with(HashSet::new)
+                .insert(current);
+        }
     }
 
     fn discovery(&mut self) {
-        let flood_id = self.flood_ids.last().unwrap().to_owned() + 1;
+        let flood_id = self.flood_ids.last().unwrap() + 1;
+        self.flood_ids.push(flood_id);
+
         let flood_request = FloodRequest::initialize(
             flood_id,
             self.id,
             NodeType::Client,
         );
-        self.flood_ids.push(flood_id);
 
-        let session_id = self.flood_ids.last().unwrap().to_owned() + 1;
+        let session_id = self.flood_ids.last().unwrap() + 1;
+        self.session_ids.push(session_id);
+
         let packet = Packet::new_flood_request(
             SourceRoutingHeader::empty_route(),
             session_id,
             flood_request,
         );
-        self.session_ids.push(session_id);
 
         for sender in self.packet_send.values() {
             if let Err(e) = sender.send(packet.clone()) {
@@ -124,35 +260,8 @@ impl ClientDanylo {
         }
     }
 
-    fn request_server_type(&self, server_id: NodeId) {
-        let query = Query::AskType;
-        let ask_type_query_string = serde_json::to_string(&query).unwrap();
-
-        let query_in_vec_bytes = ask_type_query_string.as_bytes();
-        let length_response = query_in_vec_bytes.len();
-
-        //Counting fragments
-        let mut n_fragments = length_response / 128+1;
-        if n_fragments == 0 {
-            n_fragments -= 1;
-        }
-        let fragment = Fragment::from_string(0, n_fragments as u64, ask_type_query_string);
-
-        let hop_index = 1;
-        let hops = vec![3, 1, 2, server_id];
-        let routing_header = SourceRoutingHeader {
-            hop_index,
-            hops: hops.clone(),
-        };
-        
-        let packet = Packet {
-            routing_header,
-            session_id: 0,
-            pack_type: PacketType::MsgFragment(fragment),
-        };
-
-        let next_hop = self.packet_send.get(&hops[1]).unwrap();
-        next_hop.send(packet).unwrap();
+    fn request_server_type(&self, _server_id: NodeId) {
+        todo!()
     }
 
     fn request_files_list(&self) {
