@@ -1,10 +1,10 @@
-use crossbeam_channel::{select_biased, Receiver, Sender};
+use crossbeam_channel::{Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use wg_2024::{
-    network::{NodeId, SourceRoutingHeader},
+    network::{NodeId},
     packet::{
-        Ack, FloodRequest, FloodResponse, Fragment, Nack, NackType, NodeType, Packet, PacketType,
+        Packet
     },
 };
 use crate::general_use::{Message, Query, Response, ServerCommand, ServerEvent, ServerType};
@@ -20,6 +20,7 @@ pub struct CommunicationServer{
     pub connected_drone_ids: Vec<NodeId>,
     pub flood_ids: HashSet<u64>,
     pub reassembling_messages: HashMap<u64, Vec<u8>>,
+    pub sending_messages: HashMap<u64, Vec<u8>>,
     pub counter: (u64, u64),
 
     //Channels
@@ -46,6 +47,7 @@ impl CommunicationServer{
             connected_drone_ids,
             flood_ids: Default::default(),
             reassembling_messages: Default::default(),
+            sending_messages: Default::default(),
             counter: (0, 0),
 
             to_controller_event,
@@ -75,6 +77,8 @@ impl MainTrait for CommunicationServer{
     fn get_packet_send(&mut self) -> &mut HashMap<NodeId, Sender<Packet>>{ &mut self.packet_send }
     fn get_packet_send_not_mutable(&self) -> &HashMap<NodeId, Sender<Packet>>{ &self.packet_send }
     fn get_reassembling_messages(&mut self) -> &mut HashMap<u64, Vec<u8>>{ &mut self.reassembling_messages }
+    fn get_sensing_messages(&mut self) -> &mut HashMap<u64, Vec<u8>>{ &mut self.sending_messages }
+
 
     fn process_reassembled_message(&mut self, data: Vec<u8>, src_id: NodeId){
         match String::from_utf8(data.clone()) {
