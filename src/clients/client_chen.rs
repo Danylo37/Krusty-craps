@@ -10,11 +10,11 @@ use wg_2024::{
     network::NodeId,
     packet::{Ack, FloodRequest, FloodResponse, Fragment, Nack, Packet, PacketType},
 };
-use std::sync::{Arc, Mutex};
+use wg_2024::config::Client;
 
 pub struct ClientChen {
-    id: NodeId ,                                   //general node id
-    type_: NodeType ,
+    id: NodeId,                                   //general node id
+    type_: NodeType,
     connected_drone_ids: Vec<NodeId>, //node ids (of the drones) which the client is connected
     packet_send: HashMap<NodeId, Sender<Packet>>, //each NodeId <--> Sender to the connected_node with NodeId = node1_id
     //so we have different Senders of packets, each is maybe a clone of a Sender<Packet> that
@@ -22,9 +22,10 @@ pub struct ClientChen {
     packet_recv: Receiver<Packet>, //Receiver of this Client, it's unique, the senders to this Receiver are clones of each others.
     controller_send: Sender<ClientEvent>, //the Receiver<ClientEvent> will be in Simulation Controller
     controller_recv: Receiver<ClientCommand>, //the Sender<ClientCommand> will be in Simulation Controller
-    path_traces: HashMap<NodeId, HashSet<Vec<(NodeId, NodeType)>>>, //it is maybe a map that for each destination we have a set of paths that //leads to them
+    topology: HashMap<NodeId, NodeType>, //maps every NodeId with its NodeType
+    path_traces: HashMap<NodeId, Vec<(NodeId, NodeType)>>, //it is maybe a map that for each destination we have a set of paths that //leads to them
     flood_id: u64,
-    session_id: Arc<Mutex<u64>>,
+    session_id: u64,
 }
 impl ClientChen {
     pub fn new(
@@ -35,8 +36,9 @@ impl ClientChen {
         packet_recv: Receiver<Packet>,
         controller_send: Sender<ClientEvent>,
         controller_recv: Receiver<ClientCommand>,
-        path_traces: HashMap<NodeId, HashSet<Vec<(NodeId, NodeType)>>>,
-        session_id: Arc<Mutex<u64>>,
+        topology: HashMap<NodeId, NodeType>,
+        path_traces: HashMap<NodeId, Vec<(NodeId, NodeType)>>,
+
     ) -> Self {
         Self {
             id,
@@ -46,9 +48,10 @@ impl ClientChen {
             packet_recv,
             controller_send,
             controller_recv,
+            topology,
             path_traces,
             flood_id: 0,   //initial value to be 0 for every new client
-            session_id,
+            session_id : (id as u64) << 56, //e.g. just put the id of the client at the first 8 bits like 10100101 0000...
         }
     }
 
@@ -101,7 +104,8 @@ impl ClientChen {
             NackType::UnexpectedRecipient(node_id) => self.handle_unexpected_recipient(node_id),
         }
     }
-
+    pub fn register_to_server(&mut self, server_node_id: NodeId) {
+    }
     pub fn handle_error_in_routing(&mut self, node_id: NodeId) {
         self.removal_node(node_id);
         self.compute_new_route_to(node_id);
@@ -129,9 +133,9 @@ impl ClientChen {
 
     pub fn handle_fragment(&mut self, fragment: Fragment) {}
 
-    pub fn handle_flood_request(&mut self, request: FloodRequest) {}
 
-    pub fn handle_flood_response(&mut self, response: FloodResponse) {}
+
+
 
     pub fn send_packet_to_connected_drone(&mut self, node_id: NodeId, packet: Packet) {
         if self.connected_drone_ids.contains(&node_id) {
@@ -146,41 +150,63 @@ impl ClientChen {
         }
     }
 
-    pub fn send_packet_to_node(&mut self, node_id: NodeId, packet: Packet) {
-    }
-    pub fn register_to_server(&mut self, server_node_id: NodeId) {
+
+
+    pub fn handle_flood_request(&mut self, mut request: FloodRequest) {
+        //general idea: prepare a flood response and send it back.
+
+        //1. create a flood response packet
+        self.session_id +=1;
+        request.path_trace.push((self.id, self.type_));
+        let flood_response: Packet = request.generate_response(self.session_id);
+
+        //2. send it back
+        //the generate response method doesn't give you back the hop_index correctly, so
+        //use the reverse method that gives you back the real hop_index to create a new method.
+        //ah now I noticed that the hop_index will be 1, and need to go back using the generate response is ok!
+
     }
 
     pub fn do_flooding(&mut self) {
+        self.flood_id += 1;
+        self.session_id += 1;
         // Initialize the flood request with the current flood_id, id, and node type
         let flood_request = FloodRequest::initialize(self.flood_id, self.id, NodeType::Client);
 
-        // Acquire the lock on the session_id and get its value
-        let session_id = self.session_id.lock().unwrap().clone();
-
         // Prepare the packet with the current session_id and flood_request
-        let packet = Packet::new_flood_request(SourceRoutingHeader::empty_route(), session_id, flood_request);
+        let packet = Packet::new_flood_request(SourceRoutingHeader::empty_route(), self.session_id, flood_request);
 
         // Send the packet to each connected drone
         for &node_id in self.connected_drone_ids.iter() {
             self.send_packet_to_connected_drone(node_id, packet.clone()); // assuming `send_packet_to_connected_drone` takes a cloned packet
         }
     }
-    pub fn update_routing(&mut self) {
-        // Increment the flood_id
-        self.flood_id += 1;
 
-        // Lock the session_id and increment it
-        let mut session_id = self.session_id.lock().unwrap();
-        *session_id += 1;
-
-        //send a flood request to the connected_drones
-        self.do_flooding();
+    pub fn handle_flood_response(&mut self, response: FloodResponse) {
+        //destination client/server id
+        let (destination_id, destination_type) = match response.path_trace.last() {
+            Some((destination_id, destination_type)) => (destination_id.clone(), destination_type.clone()),  // Clone it for ownership
+            None => {
+                println!("No elements in path_trace");
+                return;
+            }
+        };
+        if(destination_type != NodeType::Drone) {
+            self.path_traces.insert(destination_id, response.path_trace);
+        }
     }
 
-    pub fn update_routing_info(&mut self, node_id: NodeId) {
+    pub fn get_source_routing_header(&mut self, destination_id: NodeId) -> Option<SourceRoutingHeader> {
+        let mut source_routing_header: = SourceRoutingHeader::new(vec![], 0);
+        if let Some(route) = self.path_traces.get(&destination_id) {
+            for (node_id, node_type) in route {
+                source_routing_header.hops.push(node_id.clone());
+            }
+            Some(source_routing_header)
 
+        }else{
+            None
+        }
     }
-
 
 }
