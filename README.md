@@ -29,7 +29,7 @@ https://github.com/Rustbusters/drone.git
 ## Rust-eze
 https://github.com/Rusteze-AP/drone.git
 ## SkyLink
-https://github.com/Paglia20/SkyLink.git
+https://github.com/Suge42/Skylink_drone.git
 ## Rolling Drones
 https://github.com/giorebecchi/RollingDrone.git
 ## Bobry w locie
