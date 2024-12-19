@@ -18,9 +18,8 @@ pub struct ClientDanylo {
     floods: HashMap<NodeId, HashSet<u64>>,
     topology: HashMap<NodeId, HashSet<NodeId>>,
     routes: HashMap<NodeId, Vec<NodeId>>,
-    packets_to_send: HashMap<u64, Vec<Packet>>,
+    messages_to_send: HashMap<u64, Message>,
     fragments_to_reassemble: HashMap<u64, Vec<Fragment>>,
-    last_fragment_indexes: HashMap<u64, usize>,
 }
 
 impl ClientDanylo {
@@ -42,9 +41,8 @@ impl ClientDanylo {
             floods: HashMap::new(),
             topology: HashMap::new(),
             routes: HashMap::new(),
-            packets_to_send: HashMap::new(),
+            messages_to_send: HashMap::new(),
             fragments_to_reassemble: HashMap::new(),
-            last_fragment_indexes: HashMap::new(),
         }
     }
 
@@ -95,21 +93,14 @@ impl ClientDanylo {
     }
 
     fn handle_ack(&mut self, fragment_index: u64, session_id: u64) {
-        if let Some(packets) = self.packets_to_send.get_mut(&session_id) {
-            let next_index = fragment_index as usize + 1;
+        let message= self.messages_to_send.get_mut(&session_id).unwrap();
 
-            if next_index < packets.len() {
-                // Get the next fragment and send it
-                let next_fragment = packets[next_index].clone();
-                self.send_to_next_hop(next_fragment);
-                self.last_fragment_indexes.insert(session_id, next_index);
-
-            } else {
-                // All fragments are acknowledged; remove session
-                self.packets_to_send.remove(&session_id);
-            }
+        if let Some(next_fragment) = message.get_fragment_packet(fragment_index as usize) {
+            message.increment_last_index();
+            self.send_to_next_hop(next_fragment);
         } else {
-            eprintln!("Error: session_id {} not found", session_id);
+            // All fragments are acknowledged; remove session
+            self.messages_to_send.remove(&session_id);
         }
     }
 
@@ -119,16 +110,54 @@ impl ClientDanylo {
             | NackType::DestinationIsDrone
             | NackType::UnexpectedRecipient(_) => {
                 self.discovery();
-                self.resend_with_new_route();
+                self.resend_with_new_route(session_id);
             }
             NackType::Dropped => self.resend_last_packet(session_id),
         }
     }
 
     fn resend_last_packet(&self, session_id: u64) {
-        let last_fragment_index = *self.last_fragment_indexes.get(&session_id).unwrap();
-        let last_fragment = self.packets_to_send.get(&session_id).unwrap()[last_fragment_index].clone();
-        self.send_to_next_hop(last_fragment);
+        let message = self.messages_to_send.get(&session_id).unwrap();
+        let packet = message.get_fragment_packet(message.last_fragment_index).unwrap();
+        self.send_to_next_hop(packet);
+    }
+
+    fn resend_with_new_route(&mut self, session_id: u64) {
+        // Retrieve the message for the given session
+        let (server_id, last_index) = {
+            let message = self.messages_to_send.get_mut(&session_id).unwrap();
+
+            // Determine the server ID and get the last fragment index
+            let server_id = *message.route.last().unwrap();
+            (server_id, message.get_last_fragment_index())
+        };
+
+        // Find a new route
+        let new_route = match self.find_route_to(server_id) {
+            Some(route) => {
+                self.routes.insert(server_id, route.clone());
+                route
+            },
+            None => {
+                eprintln!("No routes to the server with id {}", server_id);
+                return;
+            },
+        };
+
+        // Update the message and resend the fragment
+        let message = self.messages_to_send.get_mut(&session_id).unwrap();
+        message.update_route(new_route);
+
+        if let Some(fragment) = message.get_fragment_packet(last_index) {
+            message.increment_last_index();
+            self.send_to_next_hop(fragment);
+        } else {
+            eprintln!(
+                "Failed to retrieve fragment at index {} for session {}",
+                last_index, session_id
+            );
+        }
+
     }
 
     fn handle_fragment(&mut self, fragment: Fragment, session_id: u64) {
@@ -138,9 +167,17 @@ impl ClientDanylo {
         // Add the current fragment
         fragments.push(fragment.clone());
 
-        // If this is the last fragment, we reassemble the message
+        // If this is the last fragment, we reassemble and handle the message
         if fragment.fragment_index == fragment.total_n_fragments - 1 {
-            self.reassemble_message(session_id);
+            let message = self.reassemble(session_id);
+            self.handle_message(message);
+        }
+    }
+
+    fn handle_message(&mut self, message: Option<String>) {
+        if let Some(message) = message {
+            println!("{}", message);
+            // TODO: handle message
         }
     }
 
@@ -317,6 +354,41 @@ impl ClientDanylo {
         self.create_and_send_message(Query::AskType, server_id);
     }
 
+    fn request_files_list(&mut self, server_id: NodeId) {
+        self.create_and_send_message(Query::AskListFiles, server_id);
+    }
+
+    fn request_file(&mut self, server_id: NodeId, file: u8) {
+        self.create_and_send_message(Query::AskFile(file), server_id);
+    }
+
+    fn request_media(&mut self, server_id: NodeId, media: String) {
+        self.create_and_send_message(Query::AskMedia(media), server_id);
+    }
+
+    fn create_and_send_message<T: Serialize>(&mut self, data: T, server_id: NodeId) {
+        // Find or create a route
+        let hops = if let Some(route) = self.routes.get(&server_id) {
+            route.clone()
+        } else if let Some(route) = self.find_route_to(server_id) {
+            self.routes.insert(server_id, route.clone());
+            route
+        } else {
+            eprintln!("No routes to the server with id {}", server_id);
+            return;
+        };
+
+        // Generate a new session ID
+        let session_id = self.session_ids.last().map_or(1, |last| last + 1);
+        self.session_ids.push(session_id);
+
+        // Create message (split the message into fragments)
+        let mut message = Message::new(session_id, hops);
+        message.create_message_of(data);
+
+        self.send_to_next_hop(message.get_fragment_packet(0).unwrap());
+    }
+
     fn find_route_to(&self, server_id: NodeId) -> Option<Vec<NodeId>> {
         let mut queue: VecDeque<(NodeId, Vec<NodeId>)> = VecDeque::new();
         let mut visited: HashSet<NodeId> = HashSet::new();
@@ -343,81 +415,67 @@ impl ClientDanylo {
         None
     }
 
-    fn request_files_list(&mut self, server_id: NodeId) {
-        self.create_and_send_message(Query::AskListFiles, server_id);
-    }
-
-    fn request_file(&mut self, server_id: NodeId, file: u8) {
-        self.create_and_send_message(Query::AskFile(file), server_id);
-    }
-
-    fn request_media(&mut self, server_id: NodeId, media: String) {
-        self.create_and_send_message(Query::AskMedia(media), server_id);
-    }
-
-    fn create_and_send_message<T: Serialize>(&mut self, message: T, server_id: NodeId) {
-        let serialized_message = match serde_json::to_string(&message) {
-            Ok(string) => string,
-            Err(e) => {
-                eprintln!("Failed to serialize message: {}", e);
-                return;
-            }
+    fn reassemble(&mut self, session_id: u64) -> Option<String> {
+        let fragments = match self.fragments_to_reassemble.get_mut(&session_id) {
+            Some(fragments) => fragments,
+            None => {
+                eprintln!("No fragments found for session {}", session_id);
+                return None;
+            },
         };
 
-        let fragments = self.fragment_message(&serialized_message);
-
-        let hops = if let Some(route) = self.routes.get(&server_id) {
-            route.clone()
-        } else if let Some(route) = self.find_route_to(server_id) {
-            self.routes.insert(server_id, route.clone());
-            route
-        } else {
-            eprintln!("There is no routes to the server with id {}", server_id);
-            return;
+        // Ensure all fragments belong to the same message
+        let total_n_fragments = match fragments.first() {
+            Some(first) => first.total_n_fragments,
+            None => {
+                eprintln!("Fragment list is empty for session {}", session_id);
+                return None;
+            },
         };
 
-        let routing_header = SourceRoutingHeader {
-            hop_index: 0,
-            hops: hops.clone(),
-        };
-
-        let session_id = self.session_ids.last().map_or(1, |last| last + 1);
-        self.session_ids.push(session_id);
-
-        self.packets_to_send.insert(session_id, Vec::new());
-        for fragment in fragments {
-            let packet = Packet {
-                routing_header: routing_header.clone(),
+        if fragments.len() as u64 != total_n_fragments {
+            eprintln!(
+                "Incorrect number of fragments for session {}: expected {}, got {}",
                 session_id,
-                pack_type: PacketType::MsgFragment(fragment),
-            };
-            self.packets_to_send.get_mut(&session_id).unwrap().push(packet);
+                total_n_fragments,
+                fragments.len()
+            );
+            return None;
         }
 
-        self.send_to_next_hop(self.packets_to_send.get(&session_id).unwrap().get(0).unwrap().clone());
-        self.last_fragment_indexes.insert(session_id, 0);
-    }
+        // Collect data from fragments
+        let mut result = Vec::new();
+        for fragment in fragments {
+            result.extend_from_slice(&fragment.data[..fragment.length as usize]);
+        }
 
-    fn fragment_message(&self, serialized_msg: &str) -> Vec<Fragment> {
-        let serialized_msg_in_bytes = serialized_msg.as_bytes();
-        let length_response = serialized_msg_in_bytes.len();
+        // Convert to a string
+        let reassembled_string = match String::from_utf8(result) {
+            Ok(string) => string,
+            Err(err) => {
+                eprintln!(
+                    "Failed to convert data to string for session {}: {}",
+                    session_id, err
+                );
+                return None;
+            },
+        };
 
-        let n_fragments = (length_response + 127) / 128;
-        (0..n_fragments)
-            .map(|i| {
-                let start = i * 128;
-                let end = ((i + 1) * 128).min(length_response);
-                let fragment_data = &serialized_msg[start..end];
-                Fragment::from_string(i as u64, n_fragments as u64, fragment_data.to_string())
-            })
-            .collect()
-    }
-
-    fn reassemble_message(&self, _session_id: u64) {
-        todo!()
+        // Deserialize into an object
+        match serde_json::from_str(&reassembled_string) {
+            Ok(deserialized) => Some(deserialized),
+            Err(err) => {
+                eprintln!(
+                    "Failed to deserialize JSON for session {}: {}",
+                    session_id, err
+                );
+                None
+            },
+        }
     }
 }
 
+/// ##### Represents a message that is fragmented into smaller pieces for transmission.
 struct Message {
     fragments_to_send: Vec<Fragment>,
     last_fragment_index: usize,
@@ -426,6 +484,11 @@ struct Message {
 }
 
 impl Message {
+    /// ### Creates a new `Message` with the given session ID and route.
+    ///
+    /// ##### Arguments
+    /// * `session_id` - A unique identifier for the session.
+    /// * `route` - The sequence of nodes the message will traverse.
     pub fn new(session_id: u64, route: Vec<NodeId>) -> Message {
         Self {
             fragments_to_send: Vec::new(),
@@ -435,6 +498,12 @@ impl Message {
         }
     }
 
+    /// ### Serializes the provided data and fragments it into smaller pieces.
+    ///
+    /// ##### Arguments
+    /// * `data` - The data to be serialized and fragmented.
+    ///
+    /// If serialization fails, the function logs an error and does nothing.
     pub fn create_message_of<T: Serialize>(&mut self, data: T) {
         let serialized_message = match serde_json::to_string(&data) {
             Ok(string) => string,
@@ -446,6 +515,13 @@ impl Message {
         self.fragments_to_send = self.fragment(&serialized_message);
     }
 
+    /// ### Splits a serialized message into fragments of a fixed size.
+    ///
+    /// ##### Arguments
+    /// * `serialized_msg` - The serialized message as a string slice.
+    ///
+    /// ##### Returns
+    /// A vector of `Fragment` objects representing the split message.
     pub fn fragment(&mut self, serialized_msg: &str) -> Vec<Fragment> {
         let serialized_msg_in_bytes = serialized_msg.as_bytes();
         let length_response = serialized_msg_in_bytes.len();
@@ -461,33 +537,59 @@ impl Message {
             .collect()
     }
 
+    /// ### Updates the route for the message.
+    ///
+    /// ##### Arguments
+    /// * `route` - The new route for the message.
     pub fn update_route(&mut self, route: Vec<NodeId>) {
         self.route = route;
     }
 
-    pub fn reassemble(&mut self) {
-        todo!()
-    }
-
-    pub fn get_next_fragment_packet(&mut self) -> Option<Packet> {
-        let Some(fragment) = self.fragments_to_send.get(self.last_fragment_index).cloned(); {
+    /// ### Retrieves the packet for the specified fragment index.
+    ///
+    /// ##### Arguments
+    /// * `fragment_index` - The index of the fragment to retrieve.
+    ///
+    /// ##### Returns
+    /// An `Option<Packet>` containing the packet if the fragment exists, or `None`.
+    pub fn get_fragment_packet(&self, fragment_index: usize) -> Option<Packet> {
+        if let Some(fragment) = self.fragments_to_send.get(fragment_index).cloned() {
             let hops = self.route.clone();
             let routing_header = SourceRoutingHeader {
                 hop_index: 0,
-                hops: hops.clone(),
+                hops,
             };
 
             let packet = Packet {
-                routing_header: routing_header.clone(),
+                routing_header,
                 session_id: self.session_id,
                 pack_type: PacketType::MsgFragment(fragment),
             };
+
             Some(packet)
-        };
-        None
+        } else {
+            None
+        }
     }
 
-    pub fn increment_last_fragment_index(&mut self) {
+    /// ### Checks if the current fragment is the last one.
+    ///
+    /// ###### Returns
+    /// `true` if the current fragment is the last one, `false` otherwise.
+    pub fn is_last_fragment(&self) -> bool {
+        self.last_fragment_index+1 == self.fragments_to_send.len()
+    }
+
+    /// ### Retrieves the index of the last fragment.
+    ///
+    /// ###### Returns
+    /// The index of the last fragment.
+    pub fn get_last_fragment_index(&self) -> usize {
+        self.last_fragment_index
+    }
+
+    /// ### Increments the index of the last processed or sent fragment.
+    pub fn increment_last_index(&mut self) {
         self.last_fragment_index += 1;
     }
 }
