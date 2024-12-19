@@ -1,11 +1,10 @@
 //I say i did a good job damn lillo
 
-use std::hash::{Hash, Hasher};
 use crossbeam_channel::Sender;
 use serde::{Deserialize, Serialize};
 
 use wg_2024::{
-    packet::{Packet, NodeType},
+    packet::Packet,
     network::NodeId,
 };
 
@@ -17,7 +16,7 @@ pub enum ServerCommand {
 }
 
 ///Server-Controller
-pub enum ServerEvent{
+pub enum ServerEvent {
 }
 
 /// From controller to Client
@@ -30,23 +29,9 @@ pub enum ClientCommand {
     AskTypeTo(NodeId),
     StartFlooding,
 }
-pub enum ClientEvent{
 
-}
+pub enum ClientEvent {
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct HashNodeType(pub NodeType);
-
-impl Hash for HashNodeType {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        (self.0 as u8).hash(state);
-    }
-}
-
-impl HashNodeType {
-    fn unwrap(self) -> NodeType {
-        self.0
-    }
 }
 
 //Queries (Client -> Server)
@@ -70,7 +55,7 @@ pub enum Query{
 
 //Server -> Client
 #[derive(Deserialize, Serialize, Debug)]
-pub enum Response{
+pub enum Response {
     //Common-shared
     ServerType(ServerType),
 
@@ -91,7 +76,7 @@ pub enum Response{
 
 ///Material
 #[derive(Deserialize, Serialize, Copy, Clone, Debug)]
-pub enum ServerType{
+pub enum ServerType {
     Communication,
     Text,
     Media,
@@ -99,7 +84,7 @@ pub enum ServerType{
 
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
-pub struct Message{
+pub struct Message {
     text: String,
 }
 
