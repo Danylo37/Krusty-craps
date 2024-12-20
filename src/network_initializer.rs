@@ -93,7 +93,7 @@ impl NetworkInit {
             receiver_of_server_events,
         );
 
-        //create the drones, clients, and servers through the config
+        //create the drones, clients, and servers through the config and connect them according to the network topology
         self.create_drones(config.drone, &mut controller, sender_of_drone_events, topology.clone());
         self.create_clients(config.client, &mut controller, sender_of_client_events, topology.clone());
         self.create_servers(config.server, &mut controller, sender_of_server_events, topology.clone());
@@ -206,7 +206,6 @@ impl NetworkInit {
     }
 
     /// SERVERS GENERATION
-
     fn create_servers(&mut self,
                       servers: Vec<Server>,
                       controller: &mut SimulationController,

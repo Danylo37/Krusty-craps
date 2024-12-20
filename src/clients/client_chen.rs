@@ -22,7 +22,7 @@ pub struct ClientChen {
     session_id: u64,
 
     //communication
-    server_registered: HashSet<NodeId>, //All the servers/clients present in the topology
+    server_registered: HashSet<NodeId>, //All the servers registered by the client
     connected_nodes_ids: Vec<NodeId>,   //I think better HashSet<(NodeId, NodeType)>, but given that we can ask for type.
     packet_send: HashMap<NodeId, Sender<Packet>>, //each connected_node_id is mapped with a sender to the connected_node
     packet_recv: Receiver<Packet>,         //Receiver of this Client, it's unique, the senders to this receiver are clones of each others.
@@ -40,7 +40,6 @@ impl ClientChen {
     pub fn new(
         node_id: NodeId,
         node_type: NodeType,
-        server_registered: HashSet<NodeId>,
         connected_nodes_ids: Vec<NodeId>,
         packet_send: HashMap<NodeId, Sender<Packet>>,
         packet_recv: Receiver<Packet>,
@@ -55,7 +54,7 @@ impl ClientChen {
             session_id : (node_id as u64) << 56, //e.g. just put the id of the client at the first 8 bits like 10100101 0000...
 
             //communication
-            server_registered,
+            server_registered : HashSet::new(),
             connected_nodes_ids,
             packet_send,
             packet_recv,
