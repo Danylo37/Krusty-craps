@@ -382,11 +382,13 @@ impl ClientDanylo {
         let session_id = self.session_ids.last().map_or(1, |last| last + 1);
         self.session_ids.push(session_id);
 
-        // Create message (split the message into fragments)
+        // Create message (split the message into fragments) and send first fragment
         let mut message = Message::new(session_id, hops);
-        message.create_message_of(data);
-
-        self.send_to_next_hop(message.get_fragment_packet(0).unwrap());
+        if message.create_message_of(data) {
+            self.send_to_next_hop(message.get_fragment_packet(0).unwrap());
+        } else {
+            eprintln!("Failed to create message.");
+        }
     }
 
     fn find_route_to(&self, server_id: NodeId) -> Option<Vec<NodeId>> {
@@ -498,21 +500,24 @@ impl Message {
         }
     }
 
-    /// ### Serializes the provided data and fragments it into smaller pieces.
+    /// ### Serializes the provided data and splits it into smaller fragments for sending.
     ///
     /// ##### Arguments
-    /// * `data` - The data to be serialized and fragmented.
+    /// * `data` - The data to be serialized. Must implement the `Serialize` trait.
     ///
-    /// If serialization fails, the function logs an error and does nothing.
-    pub fn create_message_of<T: Serialize>(&mut self, data: T) {
+    /// ##### Returns
+    /// * `true` if the data was successfully serialized and fragmented.
+    /// * `false` if serialization fails.
+    ///
+    /// If serialization fails, the function logs an error (if applicable) and does not modify the state.
+    pub fn create_message_of<T: Serialize>(&mut self, data: T) -> bool {
         let serialized_message = match serde_json::to_string(&data) {
             Ok(string) => string,
-            Err(e) => {
-                eprintln!("Failed to serialize message {}", e);
-                return;
-            }
+            Err(_) => return false,
         };
+
         self.fragments_to_send = self.fragment(&serialized_message);
+        true
     }
 
     /// ### Splits a serialized message into fragments of a fixed size.
