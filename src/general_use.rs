@@ -75,7 +75,7 @@ pub enum Response {
 }
 
 ///Material
-#[derive(Deserialize, Serialize, Copy, Clone, Debug)]
+#[derive(Deserialize, Serialize, Copy, Clone, Debug, PartialEq)]
 pub enum ServerType {
     Communication,
     Text,
