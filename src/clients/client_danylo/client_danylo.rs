@@ -1,3 +1,5 @@
+// TODO: add sending events to the controller and add logging
+
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::{HashMap, HashSet, VecDeque};
 use serde::Serialize;
@@ -7,26 +9,31 @@ use wg_2024::{
     packet::{FloodRequest, FloodResponse, Fragment, Nack, NackType, NodeType, Packet, PacketType},
 };
 
-use crate::general_use::{ClientCommand, ClientEvent, Query};
+use crate::general_use::{ClientCommand, ClientEvent, Query, ServerType, Response, Message};
+use super::chat_client::ChatClient;
 
-pub struct ClientDanylo {
-    id: NodeId,                                                 // Client ID
-    packet_send: HashMap<NodeId, Sender<Packet>>,               // Neighbor's packet sender channels
-    packet_recv: Receiver<Packet>,                              // Packet receiver channel
-    controller_send: Sender<ClientEvent>,                       // Event sender channel
-    controller_recv: Receiver<ClientCommand>,                   // Command receiver channel
-    session_ids: Vec<u64>,                                      // Used session IDs
-    flood_ids: Vec<u64>,                                        // Used flood IDs
-    floods: HashMap<NodeId, HashSet<u64>>,                      // Flood initiators and their flood IDs
-    topology: HashMap<NodeId, HashSet<NodeId>>,                 // Nodes and their neighbours
-    routes: HashMap<NodeId, Vec<NodeId>>,                       // Routes to the servers
-    messages_to_send: HashMap<u64, Message>,                    // Queue of messages to be sent for different sessions
-    fragments_to_reassemble: HashMap<u64, Vec<Fragment>>,       // Queue of fragments to be reassembled for different sessions
+pub struct ChatClientDanylo {
+    pub id: NodeId,                                             // Client ID
+    pub name: String,                                           // Client name
+    pub packet_send: HashMap<NodeId, Sender<Packet>>,           // Neighbor's packet sender channels
+    pub packet_recv: Receiver<Packet>,                          // Packet receiver channel
+    pub controller_send: Sender<ClientEvent>,                   // Event sender channel
+    pub controller_recv: Receiver<ClientCommand>,               // Command receiver channel
+    pub servers: HashMap<NodeId, Option<ServerType>>,           // IDs of the available servers and their
+    pub users: Vec<String>,                                     // Users
+    pub session_ids: Vec<u64>,                                  // Used session IDs
+    pub flood_ids: Vec<u64>,                                    // Used flood IDs
+    pub floods: HashMap<NodeId, HashSet<u64>>,                  // Flood initiators and their flood IDs
+    pub topology: HashMap<NodeId, HashSet<NodeId>>,             // Nodes and their neighbours
+    pub routes: HashMap<NodeId, Vec<NodeId>>,                   // Routes to the servers
+    pub messages_to_send: HashMap<u64, Message>,                // Queue of messages to be sent for different sessions
+    pub fragments_to_reassemble: HashMap<u64, Vec<Fragment>>,   // Queue of fragments to be reassembled for different sessions
 }
 
-impl ClientDanylo {
-    pub fn new(
+impl ChatClient for ChatClientDanylo {
+    fn new(
         id: NodeId,
+        name: String,
         packet_send: HashMap<NodeId, Sender<Packet>>,
         packet_recv: Receiver<Packet>,
         controller_send: Sender<ClientEvent>,
@@ -34,10 +41,13 @@ impl ClientDanylo {
     ) -> Self {
         Self {
             id,
+            name,
             packet_send,
             packet_recv,
             controller_send,
             controller_recv,
+            servers: HashMap::new(),
+            users: Vec::new(),
             session_ids: Vec::new(),
             flood_ids: Vec::new(),
             floods: HashMap::new(),
@@ -48,7 +58,7 @@ impl ClientDanylo {
         }
     }
 
-    pub fn run(&mut self) {
+    fn run(&mut self) {
         loop {
             select_biased! {
                 recv(self.controller_recv) -> command_res => {
@@ -64,8 +74,10 @@ impl ClientDanylo {
             }
         }
     }
+}
 
-    /// ###### Handles incoming packets and dispatches them to the appropriate handler based on the packet type.
+impl ChatClientDanylo {
+/// ###### Handles incoming packets and dispatches them to the appropriate handler based on the packet type.
     ///
     /// ###### Arguments
     /// * `packet` - The incoming packet to be processed.
@@ -74,8 +86,9 @@ impl ClientDanylo {
             PacketType::Ack(ack) => self.handle_ack(ack.fragment_index, packet.session_id),
             PacketType::Nack(nack) => self.handle_nack(nack, packet.session_id),
             PacketType::MsgFragment(fragment) => {
-                self.send_ack(fragment.fragment_index, packet.session_id, packet.routing_header);
-                self.handle_fragment(fragment, packet.session_id)
+                self.send_ack(fragment.fragment_index, packet.session_id, packet.routing_header.clone());
+                let server_id = packet.routing_header.hops.last().unwrap();
+                self.handle_fragment(fragment, packet.session_id, *server_id)
             }
             PacketType::FloodRequest(flood_request) => self.handle_flood_request(flood_request, packet.session_id),
             PacketType::FloodResponse(flood_response) => {
@@ -89,7 +102,14 @@ impl ClientDanylo {
         }
     }
 
-
+    /// ###### Handles a client command by performing the appropriate action based on the command type.
+    ///
+    /// ###### Arguments
+    ///
+    /// * `command` - The `ClientCommand` to be processed. It can be one of the following:
+    ///   - `AddSender(id, sender)`: Adds a sender to the `packet_send` map with the given `id`.
+    ///   - `RemoveSender(id)`: Removes a sender associated with the given `id` from the `packet_send` map.
+    ///   - `AskTypeTo(server_id)`: Requests the type of the specified server using `server_id`.
     fn handle_command(&mut self, command: ClientCommand) {
         match command {
             ClientCommand::AddSender(id, sender) => {
@@ -159,7 +179,7 @@ impl ClientDanylo {
     /// * `session_id` - The ID of the session whose last packet should be resent.
     fn resend_last_packet(&self, session_id: u64) {
         let message = self.messages_to_send.get(&session_id).unwrap();
-        let packet = message.get_fragment_packet(message.last_fragment_index).unwrap();
+        let packet = message.get_fragment_packet(message.get_last_fragment_index()).unwrap();
         self.send_to_next_hop(packet);
     }
 
@@ -176,7 +196,7 @@ impl ClientDanylo {
         let (server_id, last_index) = {
             let message = self.messages_to_send.get_mut(&session_id).unwrap();
 
-            let server_id = *message.route.last().unwrap();
+            let server_id = *message.get_route().last().unwrap();
             (server_id, message.get_last_fragment_index())
         };
 
@@ -216,7 +236,7 @@ impl ClientDanylo {
     /// ###### Arguments
     /// * `fragment` - The incoming fragment to be processed.
     /// * `session_id` - The ID of the session associated with the fragment.
-    fn handle_fragment(&mut self, fragment: Fragment, session_id: u64) {
+    fn handle_fragment(&mut self, fragment: Fragment, session_id: u64, server_id: NodeId) {
         // Retrieve or create a vector to store fragments for the session.
         let fragments = self.fragments_to_reassemble.entry(session_id).or_insert_with(Vec::new);
 
@@ -227,22 +247,65 @@ impl ClientDanylo {
         if fragment.fragment_index == fragment.total_n_fragments - 1 {
             // Reassemble the fragments into a complete message and process it.
             let message = self.reassemble(session_id);
-            self.handle_message(message);
+            self.handle_server_response(message, server_id);
         }
     }
 
-    /// ###### Handles a fully reassembled message.
-    ///
-    /// If the message is present, it is printed to the console. Further handling logic can be added
-    /// where indicated by the `TODO` comment.
+    /// ###### Handles the server's response based on the provided `Option<Response>` and updates the internal state accordingly.
     ///
     /// ###### Arguments
-    /// * `message` - reassembled message to be processed if there is one
-    fn handle_message(&mut self, message: Option<String>) {
-        if let Some(message) = message {
-            println!("{}", message);
-            // TODO: handle message
+    ///
+    /// * `response` - An optional `Response` from the server. If `None`, no action is taken.
+    /// * `server_id` - The ID of the server that sent the response, used to identify which server the response is associated with.
+    ///
+    /// ###### Response Variants
+    ///
+    /// - `ServerType(server_type)`: If the `server_type` is `Communication`,
+    ///   it inserts the `server_type` into the `servers` map for the given `server_id`.
+    ///   Otherwise, it removes the `server_id` from the `servers` map.
+    /// - `MessageFrom(from, message)`: Passes the message to the `handle_message` method for further processing.
+    /// - `ListUsers(users)`: Updates the list of users with the provided `users`.
+    /// - `ListFiles(_)`, `File(_)`, `Media(_)`: Logs a message indicating the client is not a web browser.
+    /// - `Err(error)`: Prints the error message to the standard error stream.
+    fn handle_server_response(&mut self, response: Option<Response>, server_id: NodeId) {
+        if let Some(response) = response {
+            match response {
+                Response::ServerType(server_type) => {
+                    if server_type == ServerType::Communication {
+                        self.servers.insert(server_id, Some(server_type));
+                    } else {
+                        self.servers.remove(&server_id);
+                    }
+                },
+                Response::MessageFrom(from, message) => {
+                    self.handle_message(from, message);
+                }
+                Response::ListUsers(users) => {
+                    self.users = users;
+                }
+                Response::ListFiles(_)
+                | Response::File(_)
+                | Response::Media(_) => {
+                    println!("I'm not a web browser!!!");
+                }
+                Response::Err(error) => {
+                    eprintln!("Occurred an error: {}", error);
+                }
+            }
         }
+    }
+
+    /// ###### Handles and prints a message received from a specified sender.
+    ///
+    /// ###### Arguments
+    ///
+    /// * `from` - A `String` representing the sender of the message.
+    /// * `message` - A `String` containing the content of the message.
+    ///
+    /// This function prints the sender's name followed by the message content to the console.
+    fn handle_message(&self, from: String, message: String) {
+        println!("Message from {}", from);
+        println!("{}", message);
     }
 
     /// ###### Sends an Ack packet for a received fragment.
@@ -444,6 +507,13 @@ impl ClientDanylo {
             let current = path[i].0;
             let next = path[i + 1].0;
 
+            if path[i].1 == NodeType::Server {
+                self.servers.insert(current, None);
+            }
+            if path[i + 1].1 == NodeType::Server {
+                self.servers.insert(next, None);
+            }
+
             // Add the connection between the current and next node in both directions.
             self.topology
                 .entry(current)
@@ -459,9 +529,14 @@ impl ClientDanylo {
 
     /// ###### Initiates a discovery process by sending a flood request to all neighboring nodes.
     ///
-    /// This method generates a new flood ID, creates a flood request, and sends it to all available neighbors.
-    /// It also generates a new session ID for the discovery process and logs any errors if the request fails to be sent.
-    fn discovery(&mut self) {
+    /// This method clears the current topology and server IDs, generates a new flood ID, creates a flood request,
+    /// and sends it to all available neighbors. It also generates a new session ID for the discovery process
+    /// and logs any errors if the request fails to be sent.
+    pub fn discovery(&mut self) {
+        // Clear the current topology and server IDs.
+        self.topology.clear();
+        self.servers.clear();
+
         // Generate a new flood ID, incrementing the last one or starting at 1 if none exists.
         let flood_id = self.flood_ids.last().map_or(1, |last| last + 1);
         self.flood_ids.push(flood_id);
@@ -494,44 +569,39 @@ impl ClientDanylo {
 
     /// ###### Sends a request to a server asking for its type.
     ///
-    /// This method creates a message of type `Query::AskType` and sends it to the specified server.
-    ///
     /// ###### Arguments
     /// * `server_id` - The ID of the server to which the request will be sent.
-    fn request_server_type(&mut self, server_id: NodeId) {
+    pub fn request_server_type(&mut self, server_id: NodeId) {
         self.create_and_send_message(Query::AskType, server_id);
     }
 
-    /// ###### Sends a request to a server asking for a list of files.
-    ///
-    /// This method creates a message of type `Query::AskListFiles` and sends it to the specified server.
+    /// ###### Sends a request to add the current client to the specified server.
     ///
     /// ###### Arguments
-    /// * `server_id` - The ID of the server to which the request will be sent.
-    fn request_files_list(&mut self, server_id: NodeId) {
-        self.create_and_send_message(Query::AskListFiles, server_id);
+    ///
+    /// * `server_id` - The ID of the server to which the request is being sent.
+    pub fn request_to_add_client(&mut self, server_id: NodeId) {
+        self.create_and_send_message(Query::AddClient(self.name.clone(), self.id), server_id);
     }
 
-    /// ###### Sends a request to a server asking for a specific file.
-    ///
-    /// This method creates a message of type `Query::AskFile` with the specified file identifier and sends it to the server.
+    /// ###### Requests the server to provide a list of all clients.
     ///
     /// ###### Arguments
-    /// * `server_id` - The ID of the server to which the request will be sent.
-    /// * `file` - The identifier of the file being requested.
-    fn request_file(&mut self, server_id: NodeId, file: u8) {
-        self.create_and_send_message(Query::AskFile(file), server_id);
+    ///
+    /// * `server_id` - The ID of the server from which the list of clients is requested.
+    pub fn request_list_clients(&mut self, server_id: NodeId) {
+        self.create_and_send_message(Query::AskListClients, server_id);
     }
 
-    /// ###### Sends a request to a server asking for specific media.
-    ///
-    /// This method creates a message of type `Query::AskMedia` with the specified media identifier and sends it to the server.
+    /// ###### Sends a message to a specific client through the server.
     ///
     /// ###### Arguments
-    /// * `server_id` - The ID of the server to which the request will be sent.
-    /// * `media` - The identifier of the media being requested.
-    fn request_media(&mut self, server_id: NodeId, media: String) {
-        self.create_and_send_message(Query::AskMedia(media), server_id);
+    ///
+    /// * `server_id` - The ID of the server handling the message.
+    /// * `to` - The recipient of the message (client's name).
+    /// * `message` - The content of the message to be sent.
+    pub fn send_message_to(&mut self, server_id: NodeId, to: String, message: String) {
+        self.create_and_send_message(Query::SendMessageTo(to, message), server_id);
     }
 
     /// ###### Creates and sends a serialized message to a specified server.
@@ -623,7 +693,7 @@ impl ClientDanylo {
     ///
     /// ###### Returns
     /// * `Option<String>` - The deserialized message as a string if successful, or `None` if any error occurs.
-    fn reassemble(&mut self, session_id: u64) -> Option<String> {
+    fn reassemble(&mut self, session_id: u64) -> Option<Response> {
         // Retrieve the fragments for the given session.
         let fragments = match self.fragments_to_reassemble.get_mut(&session_id) {
             Some(fragments) => fragments,
@@ -682,127 +752,5 @@ impl ClientDanylo {
                 None
             },
         }
-    }
-}
-
-/// ###### Represents a message that is fragmented into smaller pieces for transmission.
-struct Message {
-    fragments_to_send: Vec<Fragment>,
-    last_fragment_index: usize,
-    session_id: u64,
-    route: Vec<NodeId>,
-}
-
-impl Message {
-    /// ###### Creates a new `Message` with the given session ID and route.
-    ///
-    /// ###### Arguments
-    /// * `session_id` - A unique identifier for the session.
-    /// * `route` - The sequence of nodes the message will traverse.
-    pub fn new(session_id: u64, route: Vec<NodeId>) -> Message {
-        Self {
-            fragments_to_send: Vec::new(),
-            last_fragment_index: 0,
-            session_id,
-            route,
-        }
-    }
-
-    /// ###### Serializes the provided data and splits it into smaller fragments for sending.
-    ///
-    /// ###### Arguments
-    /// * `data` - The data to be serialized. Must implement the `Serialize` trait.
-    ///
-    /// ###### Returns
-    /// * `true` if the data was successfully serialized and fragmented.
-    /// * `false` if serialization fails.
-    ///
-    /// If serialization fails, the function logs an error (if applicable) and does not modify the state.
-    pub fn create_message_of<T: Serialize>(&mut self, data: T) -> bool {
-        let serialized_message = match serde_json::to_string(&data) {
-            Ok(string) => string,
-            Err(_) => return false,
-        };
-
-        self.fragments_to_send = self.fragment(&serialized_message);
-        true
-    }
-
-    /// ###### Splits a serialized message into fragments of a fixed size.
-    ///
-    /// ###### Arguments
-    /// * `serialized_msg` - The serialized message as a string slice.
-    ///
-    /// ###### Returns
-    /// A vector of `Fragment` objects representing the split message.
-    pub fn fragment(&mut self, serialized_msg: &str) -> Vec<Fragment> {
-        let serialized_msg_in_bytes = serialized_msg.as_bytes();
-        let length_response = serialized_msg_in_bytes.len();
-
-        let n_fragments = (length_response + 127) / 128;
-        (0..n_fragments)
-            .map(|i| {
-                let start = i * 128;
-                let end = ((i + 1) * 128).min(length_response);
-                let fragment_data = &serialized_msg[start..end];
-                Fragment::from_string(i as u64, n_fragments as u64, fragment_data.to_string())
-            })
-            .collect()
-    }
-
-    /// ###### Updates the route for the message.
-    ///
-    /// ###### Arguments
-    /// * `route` - The new route for the message.
-    pub fn update_route(&mut self, route: Vec<NodeId>) {
-        self.route = route;
-    }
-
-    /// ###### Retrieves the packet for the specified fragment index.
-    ///
-    /// ###### Arguments
-    /// * `fragment_index` - The index of the fragment to retrieve.
-    ///
-    /// ###### Returns
-    /// An `Option<Packet>` containing the packet if the fragment exists, or `None`.
-    pub fn get_fragment_packet(&self, fragment_index: usize) -> Option<Packet> {
-        if let Some(fragment) = self.fragments_to_send.get(fragment_index).cloned() {
-            let hops = self.route.clone();
-            let routing_header = SourceRoutingHeader {
-                hop_index: 0,
-                hops,
-            };
-
-            let packet = Packet {
-                routing_header,
-                session_id: self.session_id,
-                pack_type: PacketType::MsgFragment(fragment),
-            };
-
-            Some(packet)
-        } else {
-            None
-        }
-    }
-
-    /// ######Checks if the current fragment is the last one.
-    ///
-    /// ###### Returns
-    /// `true` if the current fragment is the last one, `false` otherwise.
-    pub fn is_last_fragment(&self) -> bool {
-        self.last_fragment_index+1 == self.fragments_to_send.len()
-    }
-
-    /// ###### Retrieves the index of the last fragment.
-    ///
-    /// ###### Returns
-    /// The index of the last fragment.
-    pub fn get_last_fragment_index(&self) -> usize {
-        self.last_fragment_index
-    }
-
-    /// ###### Increments the index of the last processed or sent fragment.
-    pub fn increment_last_index(&mut self) {
-        self.last_fragment_index += 1;
     }
 }
