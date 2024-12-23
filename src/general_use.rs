@@ -4,8 +4,8 @@ use crossbeam_channel::Sender;
 use serde::{Deserialize, Serialize};
 
 use wg_2024::{
-    packet::{Fragment, PacketType, Packet},
-    network::{NodeId, SourceRoutingHeader},
+    network::NodeId,
+    packet::Packet,
 };
 
 
