@@ -25,4 +25,5 @@ skylink = {git = "https://github.com/Suge42/Skylink_drone.git"}
 rolling_drone = {git = "https://github.com/giorebecchi/RollingDrone.git"}
 #bobry_w_locie = {git = "https://github.com/Seregno/Public_Bry_w_locie.git"}
 rusty_drones = {git = "https://github.com/matteo-dinoia/rusty-drones.git" }
+tokio = "1.42.0"
 

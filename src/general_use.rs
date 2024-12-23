@@ -8,6 +8,27 @@ use wg_2024::{
     network::{NodeId, SourceRoutingHeader},
 };
 
+
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "debug", derive(PartialEq))]
+pub enum NotSentType{
+    NotBeingSent,
+    Dropped,
+    RoutingError,
+    DroneDestination,
+    BeenInWrongRecipient,
+}
+
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "debug", derive(PartialEq))]
+pub enum PacketStatus{
+    Sent,                   //Successfully sent packet, that is with ack received
+    NotSent(NotSentType),   //Include the packet not successfully sent, that is nack received
+    InProgress,             //When we have no ack or nack confirmation
+}
+
+
+
 /// From controller to Server
 #[derive(Debug, Clone)]
 pub enum ServerCommand {
