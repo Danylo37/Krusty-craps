@@ -9,7 +9,7 @@
 /// accept one route from each server, waiting until the destination client is registered to one of the server.
 /// in that case when the packet is sent choosing one of the possible routes (with each route bijective to each server)
 /// when it arrives to the server:
-/// -either the server observes the source routing header of the packet, and get's the destination through the
+/// -either the server observes the source routing header of the packet, and gets the destination through the
 /// get_destination_from_packet function, and computes it's own route and updates the source routing header
 /// with a new one (or we can keep the old one).
 /// -either the server sends a nack of type error in routing, so the routing need to be updated
