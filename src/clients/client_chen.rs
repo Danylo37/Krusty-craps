@@ -1,3 +1,38 @@
+///todo! when the flood from the destination of the packet is received but it contains the node_id then
+/// should wait till the flood_response from the destination which path_trace doesn't contain the
+/// node_id is received (that's for handling the error routing, because either the sender of the
+/// next hop is not founded either the drone of the node_id is crashed),
+/// also should check if the flood_response path_trace contains a server which the destination (client)
+/// is registered into that server.
+/// also checking the server we need to know what clients are registered to the server in order to accept a route
+/// for example if no server has registered a destination client, but they are technically connected I will
+/// accept one route from each server, waiting until the destination client is registered to one of the server.
+/// in that case when the packet is sent choosing one of the possible routes (with each route bijective to each server)
+/// when it arrives to the server:
+/// -either the server observes the source routing header of the packet, and get's the destination through the
+/// get_destination_from_packet function, and computes it's own route and updates the source routing header
+/// with a new one (or we can keep the old one).
+/// -either the server sends a nack of type error in routing, so the routing need to be updated
+/// and avoid that server, so then it chooses another route.
+/// Workable alternative: Create a informative protocol from server to clients that uses packets with type
+/// Msg(fragment) such that the server informs the client through the content
+/// of the message (specific sequences of bytes/ string) about the route's status (viable/notViable)! we can
+/// therefore create a hashmap of name "route_status" (field of the client).
+/// So I need to work for the handle_flood_response function.
+
+
+///--------------------------
+///todo!
+/// 1) handling the edge_nodes, also fill with edge_node -> flood_status(edge_node).
+/// 2) maybe do a flooding to update those things when the clients starts to run.
+/// 3) done that we can set the flooding status (InGoing/ Finished(flood_id)) so that when a valid flood_response
+/// is received by all the edge_nodes (clients) through the servers so we will have:
+/// -let m = number_of_server
+/// -let n = number_of_clients(to which communicate)
+/// then each client(as destination) has m number of routes.
+/// only then we can set the flooding status to finished(flood_id).
+
+
 use std::{
     collections::{HashMap, HashSet},
     thread, vec,
@@ -15,7 +50,10 @@ use wg_2024::{
     },
 };
 use wg_2024::packet::NackType::UnexpectedRecipient;
-use crate::general_use::{ClientCommand, ClientEvent, NotSentType, PacketStatus, Query};
+use crate::general_use::{ClientCommand, ClientEvent, FloodStatus, NotSentType, PacketStatus, Query};
+use crate::general_use::FloodStatus::InGoing;
+use crate::general_use::NotSentType::{BeenInWrongRecipient, DroneDestination, Dropped, RoutingError};
+use crate::general_use::PacketStatus::NotSent;
 
 pub type SessionId = u64;
 pub type FloodId = u64;
@@ -24,27 +62,35 @@ pub type FragmentIndex = u64;
 
 
 pub struct ClientChen {
-    //data
+    //client's data
     node_id: NodeId,
     node_type: NodeType,
+
+    //status
     flood_id: FloodId,
     session_id: SessionId,
+    packets_status: HashMap<(SessionId, Option<FragmentIndex>), PacketStatus>, //map every packet with the status of sending
+    flood_status: FloodStatus,     //status of the flooding: still in progress or not
 
-    //communication
-    server_registered: HashSet<NodeId>, //All the servers registered by the client
+    //communication info
     connected_nodes_ids: Vec<NodeId>, //I think better HashSet<(NodeId, NodeType)>, but given that we can ask for type.
+    server_registered: HashSet<NodeId>, //All the servers registered by the client
+    edge_nodes: HashSet<NodeId>,  //All the nodes that are not drones, which are all the servers and all the clients
+    routing_table: HashMap<NodeId, Vec<(NodeId, NodeType)>>, //a map that for each destination we have a path according
+                                                             //to the protocol
+    //communication tools
     packet_send: HashMap<NodeId, Sender<Packet>>, //each connected_node_id is mapped with a sender to the connected_node
     packet_recv: Receiver<Packet>, //Receiver of this Client, it's unique, the senders to this receiver are clones of each others.
     controller_send: Sender<ClientEvent>, //the Receiver<ClientEvent> will be in Simulation Controller
     controller_recv: Receiver<ClientCommand>, //the Sender<ClientCommand> will be in Simulation Controller
 
     //storage
-    routing_table: HashMap<NodeId, Vec<(NodeId, NodeType)>>, //it is maybe a map that for each destination we have a set of paths that //leads to them
     input_buffer: HashMap<(SessionId, Option<FragmentIndex>), Packet>, //temporary storage for the fragments to recombine,
     output_buffer: HashMap<(SessionId, Option<FragmentIndex>), Packet>, //temporary storage for the messages to send
     input_packet_disk: HashMap<(SessionId, Option<FragmentIndex>), Packet>, //storage of all the packets sent
     output_packet_disk: HashMap<(SessionId, Option<FragmentIndex>), Packet>, //storage of all the packets received
-    packets_status: HashMap<(SessionId, Option<FragmentIndex>), PacketStatus>, //map every packet with the status
+
+
 }
 impl ClientChen {
     pub fn new(
@@ -57,27 +103,36 @@ impl ClientChen {
         controller_recv: Receiver<ClientCommand>,
     ) -> Self {
         Self {
-            //data
+            //client's data
             node_id,
             node_type,
+
+            //status
             flood_id: 0, //initial value to be 0 for every new client
             session_id: (node_id as u64) << 56, //e.g. just put the id of the client at the first 8 bits like 10100101 0000...
+            packets_status: HashMap::new(),
+            flood_status: FloodStatus::Finished(0),
 
-            //communication
-            server_registered: HashSet::new(),
+            //communication info
             connected_nodes_ids,
+            server_registered: HashSet::new(),
+            edge_nodes: HashSet::new(),
+            routing_table: HashMap::new(),
+
+
+            //communication tools
             packet_send,
             packet_recv,
             controller_send,
             controller_recv,
 
             //storage
-            routing_table: HashMap::new(),
             input_buffer: HashMap::new(),
             output_buffer: HashMap::new(),
             input_packet_disk: HashMap::new(),
             output_packet_disk: HashMap::new(),
-            packets_status: HashMap::new(),
+
+
         }
     }
 
@@ -101,6 +156,8 @@ impl ClientChen {
         }
     }
 
+
+
     /// STRUCTURE OF THE CODE:
     ///-sending packets methods
     ///-packet creation methods
@@ -111,52 +168,67 @@ impl ClientChen {
     ///sending packets methods
     ///
 
-    /*
- pub fn send_packets_in_buffer(&mut self) {
-     for &packet in self.output_buffer.values().map(|(packet,_)|packet) {
-         self.send_with_routing(packet);
-     }
- }*/
 
-
-
-    pub fn packets_status_actions(&mut self, packet: Packet, packet_status: PacketStatus) { //the &mut self unnecessary
-        match packet_status {
-            PacketStatus::NotSent(not_sent_type) => {
-                match not_sent_type {
-                    NotSentType::RoutingError => {
-                        let destination = Self::get_packet_destination(packet.clone());
-                        if (self.if_current_flood_response_from_wanted_destination_is_received(self.flood_id, destination)) {
-                            self.send_with_routing(packet.clone());
-                        }
-                    }
-                    _ => {
-                        //todo!
-
-                    }
+    fn handle_not_sent_packet(&mut self, packet: Packet, not_sent_type: NotSentType, destination: NodeId) {
+        ///     ToBeSent => send it,
+        ///     Dropped => send it,
+        ///     RoutingError => check the route to be updated and send it,
+        ///     DroneDestination => just do nothing for now, we'll see how to handle it,
+        ///     BeenInWrongRecipient => just do nothing for now, we'll see how to handle it,
+        match not_sent_type {
+            NotSentType::RoutingError => {
+                if self.if_current_flood_response_from_wanted_destination_is_received(self.flood_id, destination) {
+                    self.send_with_routing(packet);
                 }
             }
-            _ => { //todo!}
+            NotSentType::ToBeSent | NotSentType::Dropped => {
+                self.send_with_routing(packet);
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_sent_packet(&mut self, packet: Packet) {
+        self.output_buffer.remove(&(
+            packet.session_id,
+            match packet.pack_type {
+                PacketType::MsgFragment(fragment) => Some(fragment.fragment_index),
+                _ => None,
+            },
+        ));
+    }
+
+    pub fn packets_status_actions(&mut self, packet: Packet, packet_status: PacketStatus) {
+        let destination = Self::get_packet_destination(packet.clone());
+
+        match packet_status {
+            PacketStatus::NotSent(not_sent_type) => {
+                self.handle_not_sent_packet(packet, not_sent_type, destination);
+            }
+            PacketStatus::Sent => {
+                self.handle_sent_packet(packet);
+            }
+            _ => {
+                //do nothing, just wait
             }
         }
     }
 
-
     pub fn send_packets_in_buffer_checking_status(&mut self) {
-        ///
         for &(session_id, option_fragment_index) in self.output_buffer.keys(){
             let packet = self.output_packet_disk.get(&(session_id, option_fragment_index)).unwrap().clone();
             match option_fragment_index {
                 Some(index) => {
-                    // todo!
+                    self.packets_status_actions(packet, self.packets_status.get(&(session_id, Some(index))).unwrap().clone());
                 },
                 None => {
-                    // todo!
+                    self.packets_status_actions(packet, self.packets_status.get(&(session_id, None)).unwrap().clone());
                 }
             }
-
         }
     }
+
+
     pub fn send_packet_to_connected_node(&mut self, target_node_id: NodeId, packet: Packet) {
         if self.connected_nodes_ids.contains(&target_node_id) {
             if let Some(sender) = self.packet_send.get_mut(&target_node_id) {
@@ -174,9 +246,7 @@ impl ClientChen {
         self.send_packet_to_connected_node(packet.routing_header.current_hop().unwrap(), packet);
     }
 
-
-
-    /// packets creation methods
+    ///------------------------- packets methods
     pub fn divide_string_into_slices(string: String, max_slice_length: usize) -> Vec<String> {
         let mut slices = Vec::new();
         let mut start = 0;
@@ -233,6 +303,18 @@ impl ClientChen {
         fragments
     }
 
+    fn update_packet_status(
+        &mut self,
+        session_id: SessionId,
+        fragment_index: FragmentIndex,
+        status: PacketStatus,
+    ) {
+        self.packets_status
+            .entry((session_id, Some(fragment_index)))
+            .and_modify(|current_status| *current_status = status.clone())
+            .or_insert(status);
+    }
+
     ///---------------------------------------------------------------------------------------------------------------------
     /// routing methods
     fn get_packet_destination(packet: Packet) -> NodeId {
@@ -275,8 +357,12 @@ impl ClientChen {
             })
             .collect()
     }
-    fn if_current_flood_response_from_wanted_destination_is_received(&mut self, flood_id: u64, wanted_destination_id: NodeId) -> bool {
+    fn if_current_flood_response_from_wanted_destination_is_received(&mut self, flood_id: FloodId, wanted_destination_id: NodeId) -> bool {
         self.filter_flood_responses_from_wanted_destination(wanted_destination_id).contains(&flood_id)
+    }
+
+    fn if_current_flood_is_finished(&mut self, flood_id: FloodId, ){
+
     }
     fn do_flooding(&mut self) {
         self.flood_id += 1;
@@ -297,8 +383,6 @@ impl ClientChen {
             self.send_packet_to_connected_node(node_id, packet.clone()); // assuming `send_packet_to_connected_node` takes a cloned packet
         }
     }
-
-
 
     fn handle_flood_request(&mut self, mut request: FloodRequest) {
         //general idea: prepare a flood response and send it back.
@@ -331,7 +415,6 @@ impl ClientChen {
 
     ///-------------------------------------------------------------------------------------------------------------
     ///various packets handling methods
-
     fn handle_controller_command(&mut self, command: ClientCommand) {
         match command {
             ClientCommand::AddSender(target_node_id, sender) => {
@@ -373,10 +456,10 @@ impl ClientChen {
         self.output_buffer.remove(&packet_id_pair);
     }
 
+    ///----------------------------nack section
     fn handle_nack(&mut self, nack_packet: Packet, nack: Nack) {
         //change packet status
         //(nack_packet.session_id - 1, Some(nack.fragment_index))
-
 
         match nack.nack_type.clone() {
             NackType::ErrorInRouting(node_id) => {
@@ -390,38 +473,39 @@ impl ClientChen {
 
     ///handling various type of nack methods
     fn handle_error_in_routing(&mut self, node_id: NodeId, nack_packet: Packet, nack: Nack) {
-        self.packets_status
-        .entry((nack_packet.session_id - 1, Some(nack.fragment_index)))
-        .and_modify(|status| *status = PacketStatus::NotSent(NotSentType::RoutingError))
-        .or_insert(PacketStatus::NotSent(NotSentType::RoutingError));
+        self.update_packet_status(nack_packet.session_id-1, nack.fragment_index, PacketStatus::NotSent(RoutingError));
+        match self.flood_status {
+            FloodStatus::Finished(flood_id) => {
+                if (flood_id != self.flood_id) {
+                    self.do_flooding();
+                    self.flood_status = FloodStatus::InGoing;
+                }
+            },
+            _ => {}
+            ///do nothing, because in both case (when the flood response from the packet destination is received or not)
+            /// we can wait till the FloodStatus is Finished, and then we try to resend again, then
+            ///if it gives another nack, knowing that the FloodStatus is Finished, so we can
+            ///do another flooding to update the better route.
+        }
 
-        self.do_flooding();
+        //the post-part of the handling is done in the send_packets_in_buffer_checking_status
     }
 
-    fn handle_destination_is_drone(&mut self, nack_packet: Packet, nack: Nack) {
-        self.packets_status
-            .entry((nack_packet.session_id - 1, Some(nack.fragment_index)))
-            .and_modify(|status| *status = PacketStatus::NotSent(NotSentType::DroneDestination))
-            .or_insert(PacketStatus::NotSent(NotSentType::DroneDestination));
 
-        //then we handle in the send_packets_in_buffer_checking_status
+    fn handle_destination_is_drone(&mut self, nack_packet: Packet, nack: Nack) {
+        self.update_packet_status(nack_packet.session_id-1, nack.fragment_index, PacketStatus::NotSent(DroneDestination));
+        //the post-part of the handling is in the send_packets_in_buffer_checking_status
     }
 
     fn handle_pack_dropped(&mut self, nack_packet: Packet, nack: Nack) {
-        self.packets_status
-            .entry((nack_packet.session_id - 1, Some(nack.fragment_index)))
-            .and_modify(|status| *status = PacketStatus::NotSent(NotSentType::Dropped))
-            .or_insert(PacketStatus::NotSent(NotSentType::Dropped));
+        self.update_packet_status(nack_packet.session_id-1, nack.fragment_index, PacketStatus::NotSent(Dropped));
 
-        //then we handle in the send_packets_in_buffer_checking_status
+        //the post-part of the handling is in the send_packets_in_buffer_checking_status
     }
     fn handle_unexpected_recipient(&mut self, node_id: NodeId, nack_packet: Packet, nack: Nack) {
-        self.packets_status
-            .entry((nack_packet.session_id - 1, Some(nack.fragment_index)))
-            .and_modify(|status| *status = PacketStatus::NotSent(NotSentType::BeenInWrongRecipient))
-            .or_insert(PacketStatus::NotSent(NotSentType::BeenInWrongRecipient));
+        self.update_packet_status(nack_packet.session_id-1, nack.fragment_index, PacketStatus::NotSent(BeenInWrongRecipient));
 
-        //then we handle in the send_packets_in_buffer_checking_status
+        //the post-part of the handling is in the send_packets_in_buffer_checking_status
     }
 
 

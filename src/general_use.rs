@@ -7,12 +7,13 @@ use wg_2024::{
     network::NodeId,
     packet::Packet,
 };
+use crate::clients::client_chen::FloodId;
 
-
+///packet sending status
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "debug", derive(PartialEq))]
 pub enum NotSentType{
-    NotBeingSent,
+    ToBeSent,
     Dropped,
     RoutingError,
     DroneDestination,
@@ -25,6 +26,16 @@ pub enum PacketStatus{
     Sent,                   //Successfully sent packet, that is with ack received
     NotSent(NotSentType),   //Include the packet not successfully sent, that is nack received
     InProgress,             //When we have no ack or nack confirmation
+}
+
+
+///flood status
+
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "debug", derive(PartialEq))]
+pub enum FloodStatus{
+    InGoing,
+    Finished(FloodId),
 }
 
 
