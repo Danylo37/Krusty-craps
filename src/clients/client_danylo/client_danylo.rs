@@ -1,43 +1,47 @@
 // TODO: add sending events to the controller and add logging
 
 use crossbeam_channel::{select_biased, Receiver, Sender};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    thread,
+    time::{Duration, Instant},
+};
 use serde::Serialize;
 
 use wg_2024::{
     network::{NodeId, SourceRoutingHeader},
     packet::{FloodRequest, FloodResponse, Fragment, Nack, NackType, NodeType, Packet, PacketType},
 };
+use crate::clients::client::Client;
+use crate::general_use::{ClientCommand, ClientEvent, Message, Query, Response, ServerType};
 
-use crate::general_use::{ClientCommand, ClientEvent, Query, ServerType, Response, Message};
-
-use super::{
-    chat_client::ChatClient,
-    fragments::MessageFragments,
-};
+use super::message_fragments::MessageFragments;
 
 pub struct ChatClientDanylo {
     pub id: NodeId,                                             // Client ID
-    pub name: String,                                           // Client name
     pub packet_send: HashMap<NodeId, Sender<Packet>>,           // Neighbor's packet sender channels
     pub packet_recv: Receiver<Packet>,                          // Packet receiver channel
     pub controller_send: Sender<ClientEvent>,                   // Event sender channel
     pub controller_recv: Receiver<ClientCommand>,               // Command receiver channel
-    pub servers: HashMap<NodeId, Option<ServerType>>,           // IDs of the available servers and their
-    pub users: Vec<String>,                                     // Users
+    pub servers: Vec<(NodeId, ServerType)>,                     // IDs and types of the available servers
+    pub is_registered: HashMap<NodeId, bool>,                   // todo
+    pub users: Vec<NodeId>,                                     // Available users
     pub session_ids: Vec<u64>,                                  // Used session IDs
     pub flood_ids: Vec<u64>,                                    // Used flood IDs
     pub floods: HashMap<NodeId, HashSet<u64>>,                  // Flood initiators and their flood IDs
     pub topology: HashMap<NodeId, HashSet<NodeId>>,             // Nodes and their neighbours
+    pub last_response_time: Option<Instant>,                    // todo
     pub routes: HashMap<NodeId, Vec<NodeId>>,                   // Routes to the servers
     pub messages_to_send: HashMap<u64, MessageFragments>,       // Queue of messages to be sent for different sessions
     pub fragments_to_reassemble: HashMap<u64, Vec<Fragment>>,   // Queue of fragments to be reassembled for different sessions
+    pub inbox: Vec<(NodeId, Message)>,                          // Messages with their senders
+    pub response_received: bool,                                // Status of the last sent query
+    pub new_messages: usize,                                    // Count of new messages
 }
 
-impl ChatClient for ChatClientDanylo {
+impl Client for ChatClientDanylo {
     fn new(
         id: NodeId,
-        name: String,
         packet_send: HashMap<NodeId, Sender<Packet>>,
         packet_recv: Receiver<Packet>,
         controller_send: Sender<ClientEvent>,
@@ -45,20 +49,24 @@ impl ChatClient for ChatClientDanylo {
     ) -> Self {
         Self {
             id,
-            name,
             packet_send,
             packet_recv,
             controller_send,
             controller_recv,
-            servers: HashMap::new(),
+            servers: Vec::new(),
+            is_registered: HashMap::new(),
             users: Vec::new(),
             session_ids: Vec::new(),
             flood_ids: Vec::new(),
             floods: HashMap::new(),
             topology: HashMap::new(),
+            last_response_time: None,
             routes: HashMap::new(),
             messages_to_send: HashMap::new(),
             fragments_to_reassemble: HashMap::new(),
+            inbox: Vec::new(),
+            response_received: false,
+            new_messages: 0,
         }
     }
 
@@ -131,14 +139,7 @@ impl ChatClientDanylo {
         }
     }
 
-    /// ###### Handles Ack packets by processing the specified fragment index and session ID.
-    ///
-    /// If the acknowledged fragment is not the last one, the next fragment is prepared and sent to the next hop.
-    /// If all fragments have been acknowledged, the session is removed from the message queue.
-    ///
-    /// ###### Arguments
-    /// * `fragment_index` - The index of the fragment that has been acknowledged.
-    /// * `session_id` - The ID of the session associated with the acknowledgment.
+    /// todo
     fn handle_ack(&mut self, fragment_index: u64, session_id: u64) {
         let message= self.messages_to_send.get_mut(&session_id).unwrap();
 
@@ -149,28 +150,28 @@ impl ChatClientDanylo {
         } else {
             // All fragments are acknowledged; remove session
             self.messages_to_send.remove(&session_id);
+
+            println!("Message sent successfully!");
+            self.response_received = true;
         }
     }
 
-    /// ###### Handles Nack packets by responding appropriately based on the NACK type.
-    ///
-    /// Depending on the Nack type, the method may trigger route discovery, resend the packet with a new route,
-    /// or resend the last packet.
-    ///
-    /// ###### Arguments
-    /// * `nack` - The Nack packet containing the type and details of the issue.
-    /// * `session_id` - The ID of the session associated with the NACK.
+    /// todo
     fn handle_nack(&mut self, nack: Nack, session_id: u64) {
-        // For routing errors, drone destinations, or unexpected recipients, trigger discovery
-        // and resend the packet using a new route.
         match nack.nack_type {
-            NackType::ErrorInRouting(_)
-            | NackType::DestinationIsDrone
-            | NackType::UnexpectedRecipient(_) => {
-                self.discovery();
-                self.resend_with_new_route(session_id);
+            NackType::ErrorInRouting(id) => {
+                println!("Error: ErrorInRouting; drone doesn't have neighbor with id {}", id);
+                self.response_received = true;
             }
-            // For dropped packets, simply resend the last packet.
+            NackType::DestinationIsDrone => {
+                println!("Error: DestinationIsDrone");
+                self.response_received = true;
+            }
+            NackType::UnexpectedRecipient(recipient_id) => {
+                println!("Error: UnexpectedRecipient (node with id {})", recipient_id);
+                self.response_received = true;
+            }
+            // Resend the last packet.
             NackType::Dropped => self.resend_last_packet(session_id),
         }
     }
@@ -181,7 +182,7 @@ impl ChatClientDanylo {
     ///
     /// ###### Arguments
     /// * `session_id` - The ID of the session whose last packet should be resent.
-    fn resend_last_packet(&self, session_id: u64) {
+    fn resend_last_packet(&mut self, session_id: u64) {
         let message = self.messages_to_send.get(&session_id).unwrap();
         let packet = message.get_fragment_packet(message.get_last_fragment_index()).unwrap();
         self.send_to_next_hop(packet);
@@ -204,22 +205,18 @@ impl ChatClientDanylo {
             (server_id, message.get_last_fragment_index())
         };
 
-        // Attempt to find a new route to the server.
-        let new_route = match self.find_route_to(server_id) {
-            Some(route) => {
-                self.routes.insert(server_id, route.clone());
-                route
-            },
-            None => {
-                eprintln!("No routes to the server with id {}", server_id);
-                return;
-            },
+        let message = self.messages_to_send.get_mut(&session_id).unwrap();
+
+        // Attempt to update the route in the message.
+        if let Some(new_route) = self.routes.get(&server_id) {
+            message.update_route(new_route.clone());
+        } else {
+            eprintln!("There are no routes to server with id {}", server_id);
+            self.response_received = true;
+            return;
         };
 
-        // Update the route in the message and attempt to resend the last fragment.
-        let message = self.messages_to_send.get_mut(&session_id).unwrap();
-        message.update_route(new_route);
-
+        // Attempt to resend the last fragment.
         if let Some(fragment) = message.get_fragment_packet(last_index) {
             // Increment the last fragment index and send the fragment to the next hop.
             message.increment_last_index();
@@ -255,61 +252,75 @@ impl ChatClientDanylo {
         }
     }
 
-    /// ###### Handles the server's response based on the provided `Option<Response>` and updates the internal state accordingly.
-    ///
-    /// ###### Arguments
-    ///
-    /// * `response` - An optional `Response` from the server. If `None`, no action is taken.
-    /// * `server_id` - The ID of the server that sent the response, used to identify which server the response is associated with.
-    ///
-    /// ###### Response Variants
-    ///
-    /// - `ServerType(server_type)`: If the `server_type` is `Communication`,
-    ///   it inserts the `server_type` into the `servers` map for the given `server_id`.
-    ///   Otherwise, it removes the `server_id` from the `servers` map.
-    /// - `MessageFrom(from, message)`: Passes the message to the `handle_message` method for further processing.
-    /// - `ListUsers(users)`: Updates the list of users with the provided `users`.
-    /// - `ListFiles(_)`, `File(_)`, `Media(_)`: Logs a message indicating the client is not a web browser.
-    /// - `Err(error)`: Prints the error message to the standard error stream.
+    /// TODO
     fn handle_server_response(&mut self, response: Option<Response>, server_id: NodeId) {
         if let Some(response) = response {
             match response {
                 Response::ServerType(server_type) => {
-                    if server_type == ServerType::Communication {
-                        self.servers.insert(server_id, Some(server_type));
-                    } else {
-                        self.servers.remove(&server_id);
-                    }
+                    self.handle_server_type(server_id, server_type);
                 },
-                Response::MessageFrom(from, message) => {
-                    self.handle_message(from, message);
+                Response::UserAdded => {
+                    self.handle_client_added(server_id);
                 }
                 Response::ListUsers(users) => {
-                    self.users = users;
+                    self.handle_users_list(users);
                 }
-                Response::ListFiles(_)
-                | Response::File(_)
-                | Response::Media(_) => {
-                    println!("I'm not a web browser!!!");
+                Response::MessageFrom(from, message) => {
+                    self.inbox.insert(0, (from, message));
+                    self.new_messages += 1;
                 }
                 Response::Err(error) => {
                     eprintln!("Occurred an error: {}", error);
+                    self.response_received = true;
                 }
+                _ => {}
             }
         }
     }
 
-    /// ###### Handles and prints a message received from a specified sender.
-    ///
-    /// ###### Arguments
-    ///
-    /// * `from` - A `String` representing the sender of the message.
-    /// * `message` - A `String` containing the content of the message.
-    ///
-    /// This function prints the sender's name followed by the message content to the console.
-    fn handle_message(&self, from: String, message: Message) {
-        println!("Message from {}", from);
-        println!("{}", message.text);
+    /// todo
+    fn handle_server_type(&mut self, server_id: NodeId, server_type: ServerType) {
+        println!("Server type is: {}", &server_type);
+
+        self.servers.push((server_id, server_type));
+
+        if server_type == ServerType::Communication {
+            self.is_registered.insert(server_id, false);
+        }
+
+        self.response_received = true;
+    }
+
+    /// todo
+    fn handle_client_added(&mut self, server_id: NodeId) {
+        println!("You have registered successfully!");
+        self.is_registered.insert(server_id, true);
+        self.response_received = true;
+    }
+
+    /// todo
+    fn handle_users_list(&mut self, users: Vec<NodeId>) {
+        println!("Users list:");
+        for user_id in &users {
+            println!("User {}", user_id);
+        }
+        self.users = users;
+        self.response_received = true;
+    }
+
+    /// TODO
+    pub fn wait_response(&mut self) {
+        let timeout = Duration::from_secs(5);
+        let start_time = Instant::now();
+
+        while !self.response_received {
+            if start_time.elapsed() > timeout {
+                eprintln!("Timeout waiting for server response");
+                return;
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+        self.response_received = false;
     }
 
     /// ###### Sends an Ack packet for a received fragment.
@@ -321,7 +332,7 @@ impl ChatClientDanylo {
     /// * `fragment_index` - The index of the fragment being acknowledged.
     /// * `session_id` - The ID of the session associated with the fragment.
     /// * `routing_header` - The routing information required to send the ACK packet.
-    fn send_ack(&self, fragment_index: u64, session_id: u64, routing_header: SourceRoutingHeader) {
+    fn send_ack(&mut self, fragment_index: u64, session_id: u64, routing_header: SourceRoutingHeader) {
         let ack = Packet::new_ack(routing_header, session_id, fragment_index);
         self.send_to_next_hop(ack)
     }
@@ -416,10 +427,11 @@ impl ChatClientDanylo {
     ///
     /// ###### Arguments
     /// * `packet` - The packet to be sent to the next hop.
-    fn send_to_next_hop(&self, mut packet: Packet) {
+    fn send_to_next_hop(&mut self, mut packet: Packet) {
         // Attempt to find the sender for the next hop.
         let Some(sender) = self.get_sender_of_next(packet.routing_header.clone()) else {
             eprintln!("There is no sender to the next hop.");
+            self.response_received = true;
             return;
         };
 
@@ -429,6 +441,7 @@ impl ChatClientDanylo {
         // Attempt to send the updated fragment packet to the next hop.
         if sender.send(packet).is_err() {
             eprintln!("Error sending the packet to next hop.");
+            self.response_received = true;
         }
     }
 
@@ -495,28 +508,47 @@ impl ChatClientDanylo {
         }
     }
 
-    /// ###### Handles a received flood response and updates the network topology.
-    ///
-    /// This method processes the path trace in the flood response, adding each pair of consecutive nodes to the topology
-    /// to reflect the bidirectional connectivity between them. The topology is updated for both the current and next node
-    /// in each step of the path trace.
-    ///
-    /// ###### Arguments
-    /// * `flood_response` - The flood response containing the path trace to be processed.
+    /// Handles a flood response by updating routes, servers, and topology.
     fn handle_flood_response(&mut self, flood_response: FloodResponse) {
         let path = &flood_response.path_trace;
 
-        // Iterate through the path trace, excluding the last node.
+        self.update_routes_and_servers(path);
+        self.update_topology(path);
+
+        // todo
+        self.last_response_time = Some(Instant::now());
+    }
+
+    /// Updates the routing table and server information based on the path trace.
+    ///
+    /// - Adds the server to the `servers` map if the last node in the path is a server.
+    /// - Updates the route if the new path is shorter than the existing one.
+    fn update_routes_and_servers(&mut self, path: &[(NodeId, NodeType)]) {
+        if let Some((id, NodeType::Server)) = path.last() {
+            if self
+                .routes
+                .get(id)
+                .map_or(true, |prev_path| prev_path.len() > path.len())
+            {
+                // Add the server to the servers list with an undefined type.
+                self.servers.push((*id, ServerType::Undefined));
+
+                // Update the routing table with the new, shorter path.
+                self.routes.insert(
+                    *id,
+                    path.iter().map(|entry| entry.0.clone()).collect(),
+                );
+            }
+        }
+    }
+
+    /// Updates the topology graph by adding connections between nodes in the path trace.
+    ///
+    /// - Adds bidirectional connections between each pair of consecutive nodes.
+    fn update_topology(&mut self, path: &[(NodeId, NodeType)]) {
         for i in 0..path.len() - 1 {
             let current = path[i].0;
             let next = path[i + 1].0;
-
-            if path[i].1 == NodeType::Server {
-                self.servers.insert(current, None);
-            }
-            if path[i + 1].1 == NodeType::Server {
-                self.servers.insert(next, None);
-            }
 
             // Add the connection between the current and next node in both directions.
             self.topology
@@ -531,15 +563,14 @@ impl ChatClientDanylo {
         }
     }
 
-    /// ###### Initiates a discovery process by sending a flood request to all neighboring nodes.
-    ///
-    /// This method clears the current topology and server IDs, generates a new flood ID, creates a flood request,
-    /// and sends it to all available neighbors. It also generates a new session ID for the discovery process
-    /// and logs any errors if the request fails to be sent.
+    /// Initiates the discovery process by clearing current state, generating new identifiers,
+    /// and broadcasting a flood request to all neighbors.
     pub fn discovery(&mut self) {
-        // Clear the current topology and server IDs.
-        self.topology.clear();
+        // Clear all current data structures related to users, routes, servers, and topology.
+        self.users.clear();
+        self.routes.clear();
         self.servers.clear();
+        self.topology.clear();
 
         // Generate a new flood ID, incrementing the last one or starting at 1 if none exists.
         let flood_id = self.flood_ids.last().map_or(1, |last| last + 1);
@@ -564,47 +595,46 @@ impl ChatClientDanylo {
         );
 
         // Attempt to send the flood request to all neighbors.
-        for sender in self.packet_send.values() {
-            if let Err(e) = sender.send(packet.clone()) {
-                eprintln!("Failed to send FloodRequest: {:?}", e);
+        for sender in &self.packet_send {
+            if let Err(_) = sender.1.send(packet.clone()) {
+                eprintln!("Failed to send FloodRequest to the drone with id {}.", sender.0);
+                return;
             }
+        }
+
+        // todo
+        self.last_response_time = Some(Instant::now());
+        self.wait_discovery_end(Duration::from_secs(1));
+    }
+
+    /// TODO
+    pub fn wait_discovery_end(&mut self, timeout: Duration) {
+        while let Some(last_response) = self.last_response_time {
+            if Instant::now().duration_since(last_response) > timeout {
+                println!("Discovery complete!");
+                break;
+            }
+            thread::sleep(Duration::from_millis(100));
         }
     }
 
     /// ###### Sends a request to a server asking for its type.
-    ///
-    /// ###### Arguments
-    /// * `server_id` - The ID of the server to which the request will be sent.
     pub fn request_server_type(&mut self, server_id: NodeId) {
         self.create_and_send_message(Query::AskType, server_id);
     }
 
-    /// ###### Sends a request to add the current client to the specified server.
-    ///
-    /// ###### Arguments
-    ///
-    /// * `server_id` - The ID of the server to which the request is being sent.
-    pub fn request_to_add_client(&mut self, server_id: NodeId) {
-        self.create_and_send_message(Query::AddClient(self.name.clone(), self.id), server_id);
+    /// ###### Sends a request to register the current client to the specified server.
+    pub fn request_to_register(&mut self, server_id: NodeId) {
+        self.create_and_send_message(Query::AddUser(self.id), server_id);
     }
 
-    /// ###### Requests the server to provide a list of all clients.
-    ///
-    /// ###### Arguments
-    ///
-    /// * `server_id` - The ID of the server from which the list of clients is requested.
-    pub fn request_list_clients(&mut self, server_id: NodeId) {
-        self.create_and_send_message(Query::AskListClients, server_id);
+    /// ###### Requests the server to provide a list of all users.
+    pub fn request_users_list(&mut self, server_id: NodeId) {
+        self.create_and_send_message(Query::AskListUsers, server_id);
     }
 
     /// ###### Sends a message to a specific client through the server.
-    ///
-    /// ###### Arguments
-    ///
-    /// * `server_id` - The ID of the server handling the message.
-    /// * `to` - The recipient of the message (client's name).
-    /// * `message` - The content of the message to be sent.
-    pub fn send_message_to(&mut self, server_id: NodeId, to: String, message: Message) {
+    pub fn send_message_to(&mut self, to: NodeId, message: Message, server_id: NodeId) {
         self.create_and_send_message(Query::SendMessageTo(to, message), server_id);
     }
 
@@ -620,11 +650,9 @@ impl ChatClientDanylo {
         // Find or create a route.
         let hops = if let Some(route) = self.routes.get(&server_id) {
             route.clone()
-        } else if let Some(route) = self.find_route_to(server_id) {
-            self.routes.insert(server_id, route.clone());
-            route
         } else {
             eprintln!("No routes to the server with id {}", server_id);
+            self.response_received = true;
             return;
         };
 
@@ -638,9 +666,11 @@ impl ChatClientDanylo {
             self.send_to_next_hop(message.get_fragment_packet(0).unwrap());
         } else {
             eprintln!("Failed to create message.");
+            self.response_received = true;
         }
     }
 
+    #[deprecated]
     /// ###### Finds a route from the current node to the specified server using breadth-first search.
     ///
     /// This method explores the network topology starting from the current node, and returns the shortest path
