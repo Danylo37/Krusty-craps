@@ -1,6 +1,9 @@
 use serde::Serialize;
-use wg_2024::network::{NodeId, SourceRoutingHeader};
-use wg_2024::packet::{Fragment, Packet, PacketType};
+
+use wg_2024::{
+    network::{NodeId, SourceRoutingHeader},
+    packet::{Fragment, Packet, PacketType},
+};
 
 /// ###### Represents a message that is fragmented into smaller pieces for transmission.
 pub struct MessageFragments {
@@ -11,7 +14,7 @@ pub struct MessageFragments {
 }
 
 impl MessageFragments {
-    /// ###### Creates a new `MessageFragments` with the given session ID and route.
+    /// ###### Creates a new `Message` with the given session ID and route.
     ///
     /// ###### Arguments
     /// * `session_id` - A unique identifier for the session.
