@@ -7,7 +7,7 @@ use wg_2024::{
     network::NodeId,
     packet::Packet,
 };
-use crate::clients::client_chen::FloodId;
+use crate::clients::client_chen::{FloodId, ReceivedOrderId};
 
 ///packet sending status
 #[derive(Debug, Clone)]
@@ -29,7 +29,14 @@ pub enum PacketStatus{
 }
 
 
-///flood status
+///flood received status
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "debug", derive(PartialEq))]
+pub enum FloodReceivedStatusFromNode{
+    Received(ReceivedOrderId),
+    NotReceived,
+}
+
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "debug", derive(PartialEq))]

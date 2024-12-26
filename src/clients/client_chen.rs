@@ -50,7 +50,8 @@ use wg_2024::{
     },
 };
 use wg_2024::packet::NackType::UnexpectedRecipient;
-use crate::general_use::{ClientCommand, ClientEvent, FloodStatus, NotSentType, PacketStatus, Query};
+use wg_2024::packet::NodeType::Client;
+use crate::general_use::{ClientCommand, ClientEvent, FloodReceivedStatusFromNode, FloodStatus, NotSentType, PacketStatus, Query};
 use crate::general_use::FloodStatus::InGoing;
 use crate::general_use::NotSentType::{BeenInWrongRecipient, DroneDestination, Dropped, RoutingError};
 use crate::general_use::PacketStatus::NotSent;
@@ -58,8 +59,7 @@ use crate::general_use::PacketStatus::NotSent;
 pub type SessionId = u64;
 pub type FloodId = u64;
 pub type FragmentIndex = u64;
-
-
+pub type ReceivedOrderId = u64;
 
 pub struct ClientChen {
     //client's data
@@ -70,7 +70,9 @@ pub struct ClientChen {
     flood_id: FloodId,
     session_id: SessionId,
     packets_status: HashMap<(SessionId, Option<FragmentIndex>), PacketStatus>, //map every packet with the status of sending
-    flood_status: FloodStatus,     //status of the flooding: still in progress or not
+    flood_status: FloodStatus,                                                 //status of the current flooding: still in progress or not
+    flood_received_nodes: HashMap<NodeId, FloodReceivedStatusFromNode>,
+    received_node_order_id: ReceivedOrderId,
 
     //communication info
     connected_nodes_ids: Vec<NodeId>, //I think better HashSet<(NodeId, NodeType)>, but given that we can ask for type.
@@ -90,7 +92,6 @@ pub struct ClientChen {
     input_packet_disk: HashMap<(SessionId, Option<FragmentIndex>), Packet>, //storage of all the packets sent
     output_packet_disk: HashMap<(SessionId, Option<FragmentIndex>), Packet>, //storage of all the packets received
 
-
 }
 impl ClientChen {
     pub fn new(
@@ -109,10 +110,11 @@ impl ClientChen {
 
             //status
             flood_id: 0, //initial value to be 0 for every new client
-            session_id: (node_id as u64) << 56, //e.g. just put the id of the client at the first 8 bits like 10100101 0000...
+            session_id: (node_id as u64) << 56, //e.g. just put the id of the client at the first 8 bits like 10100101 0000... because the node_id is 8 bits and we use it as identifier
             packets_status: HashMap::new(),
             flood_status: FloodStatus::Finished(0),
-
+            flood_received_nodes: HashMap::new(),   //are the nodes from which we received an acceptable flood response
+            received_node_order_id: 0,
             //communication info
             connected_nodes_ids,
             server_registered: HashSet::new(),
@@ -378,7 +380,7 @@ impl ClientChen {
             flood_request,
         );
 
-        // Send the packet to each connected drone
+        // Send the packet to each connected node
         for &node_id in self.connected_nodes_ids.iter() {
             self.send_packet_to_connected_node(node_id, packet.clone()); // assuming `send_packet_to_connected_node` takes a cloned packet
         }
@@ -397,6 +399,10 @@ impl ClientChen {
         //2. send it back
         self.send_with_routing(response);
     }
+
+    ///we assume that the server when receives a flood_request from a client/server, it both:
+    ///1) sends back a flood_response to the client
+    ///2) forwards the flood_request to his neighbors, (the flood_request stops until encounters a client).
     fn handle_flood_response(&mut self, response: FloodResponse) {
         //destination client/server id
         let (destination_id, destination_type) = match response.path_trace.last().cloned() {
@@ -407,6 +413,8 @@ impl ClientChen {
                 return;
             }
         };
+
+
         if (destination_type != NodeType::Drone) {
             self.routing_table
                 .insert(destination_id, response.path_trace);
