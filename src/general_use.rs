@@ -1,5 +1,6 @@
 //I say i did a good job damn lillo
 
+use std::fmt::{Display, Formatter};
 use crossbeam_channel::Sender;
 use serde::{Deserialize, Serialize};
 
@@ -7,7 +8,9 @@ use wg_2024::{
     network::NodeId,
     packet::Packet,
 };
-use crate::clients::client_chen::{FloodId, ReceivedOrderId};
+use crate::clients::client_chen::FloodId;
+
+pub type Message = String;
 
 ///packet sending status
 #[derive(Debug, Clone)]
@@ -28,15 +31,7 @@ pub enum PacketStatus{
     InProgress,             //When we have no ack or nack confirmation
 }
 
-
-///flood received status
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "debug", derive(PartialEq))]
-pub enum FloodReceivedStatusFromNode{
-    Received(ReceivedOrderId),
-    NotReceived,
-}
-
+///flood status
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "debug", derive(PartialEq))]
@@ -44,8 +39,6 @@ pub enum FloodStatus{
     InGoing,
     Finished(FloodId),
 }
-
-
 
 /// From controller to Server
 #[derive(Debug, Clone)]
@@ -80,9 +73,9 @@ pub enum Query{
     AskType,
 
     //To Communication Server
-    AddClient(String, NodeId),
-    AskListClients,
-    SendMessageTo(String, Message),
+    AddUser(NodeId),
+    AskListUsers,
+    SendMessageTo(NodeId, Message),
 
     //To Content Server
     //(Text)
@@ -99,8 +92,9 @@ pub enum Response {
     ServerType(ServerType),
 
     //From Communication Server
-    MessageFrom(String, Message),
-    ListUsers(Vec<String>),
+    UserAdded,
+    MessageFrom(NodeId, Message),
+    ListUsers(Vec<NodeId>),
 
     //From Content Server
     //(Text)
@@ -119,9 +113,17 @@ pub enum ServerType {
     Communication,
     Text,
     Media,
+    Undefined,
 }
 
-#[derive(Deserialize, Serialize, Clone, Debug)]
-pub struct Message {
-    pub text: String,
+impl Display for ServerType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            ServerType::Communication => "Communication",
+            ServerType::Text => "Text",
+            ServerType::Media => "Media",
+            ServerType::Undefined => "Undefined",
+        };
+        write!(f, "{}", name)
+    }
 }

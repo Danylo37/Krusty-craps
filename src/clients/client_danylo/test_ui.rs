@@ -1,25 +1,43 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use crossbeam_channel::{unbounded, Sender};
 
 use wg_2024::{network::NodeId, packet::Packet};
 
-use crate::general_use::ServerType;
+use crate::{
+    clients::client::Client,
+    general_use::ServerType,
+};
 
 use super::{
-    ui::start_ui,
-    chat_client::ChatClient,
-    client_danylo::ChatClientDanylo
+    client_danylo::ChatClientDanylo,
+    ui::run_chat_client_ui
 };
 
 pub fn test_ui() {
-    let mut c1 = create_test_chat_client(1, "Danylo".to_string());
-    c1.servers.insert(4, Some(ServerType::Communication));
-    c1.servers.insert(5, Some(ServerType::Communication));
+    let mut c1 = create_test_chat_client(1);
 
-    start_ui(c1);
+    c1.topology.insert(2, HashSet::from_iter(vec![1, 4]));
+    c1.topology.insert(3, HashSet::from_iter(vec![1, 5]));
+
+    c1.servers.push((4, ServerType::Communication));
+    c1.servers.push((5, ServerType::Communication));
+    c1.is_registered.insert(4, false);
+    c1.is_registered.insert(5, true);
+
+    c1.servers.push((6, ServerType::Media));
+    c1.servers.push((7, ServerType::Text));
+    c1.servers.push((8, ServerType::Undefined));
+
+    c1.users.push(9);
+    c1.users.push(10);
+    c1.users.push(11);
+
+    c1.new_messages = 2;
+
+    run_chat_client_ui(c1);
 }
 
-pub fn create_test_chat_client(id: NodeId, name: String) -> ChatClientDanylo {
+pub fn create_test_chat_client(id: NodeId) -> ChatClientDanylo {
     // Client with id 1
     let (_c1_send, c1_recv) = unbounded();
 
@@ -36,7 +54,6 @@ pub fn create_test_chat_client(id: NodeId, name: String) -> ChatClientDanylo {
 
     ChatClientDanylo::new(
         id,
-        name,
         packet_send,
         c1_recv,
         sc_event_send,

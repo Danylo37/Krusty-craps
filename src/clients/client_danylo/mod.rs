@@ -1,5 +1,4 @@
 pub mod client_danylo;
-pub mod chat_client;
 pub mod ui;
-mod test_ui;
-mod fragments;
+pub mod test_ui;
+mod message_fragments;
