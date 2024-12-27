@@ -1,10 +1,9 @@
-use std::{io, io::Write};
+use std::io::{self, Write};
 use wg_2024::network::NodeId;
 use crate::general_use::ServerType;
 use super::client_danylo::ChatClientDanylo;
 
 /// ###### Starts the user interface for the chat client.
-/// Handles user input and manages the main interaction loop.
 pub fn run_chat_client_ui(mut client: ChatClientDanylo) {
     // Display the initial menu
     display_main_menu(&client);
@@ -80,7 +79,14 @@ fn discover_network(client: &mut ChatClientDanylo) {
     println!("--------------------------\n");
     println!("-------- Discovery --------");
     println!("Starting discovery...");
-    client.discovery();
+    match client.discovery() {
+        Ok(_) => {
+            println!("Discovery complete!");
+        }
+        Err(error) => {
+            println!("Discovery failed: {}", error);
+        }
+    }
     println!("--------------------------");
 }
 
@@ -127,7 +133,8 @@ fn only_back_option() {
 /// ###### Allows the user to select a server and interact with it.
 /// Displays the list of servers and handles user input.
 fn send_request(client: &mut ChatClientDanylo) {
-    let servers = client.servers.clone();
+    let mut servers: Vec<(NodeId, ServerType)> = client.servers.clone().into_iter().collect();
+    servers.sort_by_key(|k| k.0);
 
     display_choose_server(&servers);
 
@@ -204,7 +211,7 @@ fn communication_server_menu(server_id: NodeId, client: &mut ChatClientDanylo) {
                 break;
             }
             1 => {
-                request_sending(server_id, client, "AddClient");
+                request_sending(server_id, client, "RegisterClient");
                 break;
             }
             _ => {
@@ -214,15 +221,14 @@ fn communication_server_menu(server_id: NodeId, client: &mut ChatClientDanylo) {
     }
 }
 
-/// ###### Displays the available options for the communication server menu
-/// based on the user's registration status.
+/// ###### Displays the available options for the communication server menu based on the client's registration status.
 fn display_communication_server_options(is_registered: bool) {
     println!("-------------------------\n");
     println!("------ Comm. server -----");
 
     match is_registered {
         true => {
-            println!("1. Request user's list");
+            println!("1. Request client's list");
             println!("2. Send message");
         }
         false => {
@@ -274,37 +280,77 @@ fn request_sending(server_id: NodeId, client: &mut ChatClientDanylo, query: &str
 
     match query {
         "AskType" => {
-            println!("Requesting server type...");
-            client.request_server_type(server_id);
+            handle_ask_type(client, server_id);
         }
-        "AddClient" => {
-            println!("Registering to register...");
-            client.request_to_register(server_id);
+        "RegisterClient" => {
+            handle_register_client(client, server_id);
         }
-        "AskListUsers" => {
-            println!("Requesting list of users...");
-            client.request_users_list(server_id);
+        "AskListClients" => {
+            handle_ask_users_list(client, server_id)
         }
         _ => {}
     }
-
-    client.wait_response();
     only_back_option();
 }
 
-/// ###### Allows the user to send a message to another user by selecting from a list of users.
-fn send_message(client: &mut ChatClientDanylo, server_id: NodeId) {
-    let users = client.users.clone();
+/// ###### Handles the request to get the server type.
+fn handle_ask_type(client: &mut ChatClientDanylo, server_id: NodeId) {
+    println!("Requesting server type...");
 
-    display_choose_user(&users);
+    match client.request_server_type(server_id) {
+        Ok(_) => {
+            println!("Server type is: {}", client.servers.get(&server_id).unwrap());
+        }
+        Err(error) => {
+            println!("Failed to get server type: {}", error);
+        }
+    };
+}
+
+/// ###### Handles the request to register a client to the server.
+fn handle_register_client(client: &mut ChatClientDanylo, server_id: NodeId) {
+    println!("Requesting to register...");
+
+    match client.request_to_register(server_id) {
+        Ok(_) => {
+            println!("You have registered successfully!");
+        }
+        Err(error) => {
+            println!("Failed to register: {}", error);
+        }
+    }
+}
+
+/// ###### Handles the response from the server after requesting the list of clients.
+fn handle_ask_users_list(client: &mut ChatClientDanylo, server_id: NodeId) {
+    println!("Requesting list of clients...");
+
+    match client.request_users_list(server_id) {
+        Ok(_) => {
+            println!("Client list:");
+            for user_id in client.clients.iter() {
+                println!("Client {}", user_id);
+            }
+        }
+        Err(error) => {
+            println!("Failed to get clients list: {}", error);
+        }
+    };
+}
+
+/// ###### Selects a client to send a message to and handles the message sending process.
+fn send_message(client: &mut ChatClientDanylo, server_id: NodeId) {
+    let clients = client.clients.clone();
+
+    display_choose_user(&clients);
 
     loop {
         let user_choice = ask_input_user();
 
         if user_choice == 0 {
             break;
-        } else if (1..=users.len()).contains(&user_choice) {
-            message_sending(users[user_choice - 1], client, server_id);
+        } else if (1..=clients.len()).contains(&user_choice) {
+            message_sending(clients[user_choice - 1], client, server_id);
             break;
         } else {
             println!("Invalid option. Please try again.");
@@ -312,24 +358,24 @@ fn send_message(client: &mut ChatClientDanylo, server_id: NodeId) {
     }
 }
 
-/// ###### Displays a list of users for the sender to choose from.
-fn display_choose_user(users: &Vec<NodeId>) {
+/// ###### Displays a list of clients for the sender to choose from.
+fn display_choose_user(clients: &Vec<NodeId>) {
     println!("-------------------------\n");
-    println!("------ Choose user ------");
+    println!("----- Choose client -----");
 
-    if users.is_empty() {
-        println!("No users found.");
+    if clients.is_empty() {
+        println!("No clients found.");
     } else {
-        for (index, user_id) in users.iter().enumerate() {
-            println!("{}. User {}", index + 1, user_id);
+        for (index, user_id) in clients.iter().enumerate() {
+            println!("{}. Client {}", index + 1, user_id);
         }
     }
 
     println!("0. Back to main menu");
 }
 
-/// ###### Sends a message to the selected user and handles errors if they occur.
-fn message_sending(user: NodeId, client: &mut ChatClientDanylo, server_id: NodeId) {
+/// ###### Sends a message to the selected client.
+fn message_sending(recipient: NodeId, client: &mut ChatClientDanylo, server_id: NodeId) {
     println!("-------------------------\n");
     println!("----- Your message ------");
 
@@ -343,7 +389,15 @@ fn message_sending(user: NodeId, client: &mut ChatClientDanylo, server_id: NodeI
                 println!("Message cannot be empty. Please try again.");
             } else {
                 println!("Sending message...");
-                client.send_message_to(user, message.to_string(), server_id);
+
+                match client.send_message_to(recipient, message.to_string(), server_id) {
+                    Ok(_) => {
+                        println!("Message sent successfully!");
+                    }
+                    Err(error) => {
+                        println!("Failed to send message: {}", error);
+                    }
+                }
             }
         }
         Err(error) => println!("Error reading input: {}", error),
