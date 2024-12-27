@@ -340,7 +340,7 @@ impl ClientChen {
         if self.fragment_assembling_buffer.iter().len() as u64 == self.get_total_n_fragments().unwrap() {
             let message = self.reassemble_fragments_in_buffer();
             match message{
-                Response::ListUsers(list_users) => {
+                Response::ListClients(list_users) => {
                     for user_id in list_users{
                         self.communicatable_nodes.insert(user_id, CommunicableType::Yes);
                     }
@@ -507,7 +507,7 @@ impl ClientChen {
     }
 
     fn send_query_ask_registered_clients(&mut self, server_id: ServerId) {
-        let messages = Self::msg_to_fragments(Query::AskListUsers, server_id);
+        let messages = Self::msg_to_fragments(Query::AskListClients, server_id);
 
         for message in messages {
             // Extract session ID and optional fragment index for the key
@@ -544,10 +544,6 @@ impl ClientChen {
             }
             ClientCommand::RemoveSender(target_node_id) => {
                 self.packet_send.remove(&target_node_id);
-            }
-            ClientCommand::AskTypeTo(target_node_id) => self.ask_server_type(target_node_id),
-            ClientCommand::StartFlooding => {
-                self.do_flooding();
             }
         }
     }
