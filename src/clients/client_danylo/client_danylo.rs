@@ -18,25 +18,39 @@ use crate::general_use::{ClientCommand, ClientEvent, Message, Query, Response, S
 use super::message_fragments::MessageFragments;
 
 pub struct ChatClientDanylo {
+    // ID
     pub id: NodeId,                                             // Client ID
+
+    // Channels
     pub packet_send: HashMap<NodeId, Sender<Packet>>,           // Neighbor's packet sender channels
     pub packet_recv: Receiver<Packet>,                          // Packet receiver channel
     pub controller_send: Sender<ClientEvent>,                   // Event sender channel
     pub controller_recv: Receiver<ClientCommand>,               // Command receiver channel
+
+    // Servers and users
     pub servers: Vec<(NodeId, ServerType)>,                     // IDs and types of the available servers
-    pub is_registered: HashMap<NodeId, bool>,                   // todo
+    pub is_registered: HashMap<NodeId, bool>,                   // Registration status on servers
     pub users: Vec<NodeId>,                                     // Available users
+
+    // Used IDs
     pub session_ids: Vec<u64>,                                  // Used session IDs
     pub flood_ids: Vec<u64>,                                    // Used flood IDs
-    pub floods: HashMap<NodeId, HashSet<u64>>,                  // Flood initiators and their flood IDs
+
+    // Network
     pub topology: HashMap<NodeId, HashSet<NodeId>>,             // Nodes and their neighbours
-    pub last_response_time: Option<Instant>,                    // todo
     pub routes: HashMap<NodeId, Vec<NodeId>>,                   // Routes to the servers
+
+    // Message queues
     pub messages_to_send: HashMap<u64, MessageFragments>,       // Queue of messages to be sent for different sessions
     pub fragments_to_reassemble: HashMap<u64, Vec<Fragment>>,   // Queue of fragments to be reassembled for different sessions
+
+    // Inbox
     pub inbox: Vec<(NodeId, Message)>,                          // Messages with their senders
-    pub response_received: bool,                                // Status of the last sent query
     pub new_messages: usize,                                    // Count of new messages
+
+    // Response statuses
+    pub response_received: bool,                                // Status of the last sent query
+    pub last_response_time: Option<Instant>,                    // Time of the last response
 }
 
 impl Client for ChatClientDanylo {
@@ -58,15 +72,14 @@ impl Client for ChatClientDanylo {
             users: Vec::new(),
             session_ids: Vec::new(),
             flood_ids: Vec::new(),
-            floods: HashMap::new(),
             topology: HashMap::new(),
-            last_response_time: None,
             routes: HashMap::new(),
             messages_to_send: HashMap::new(),
             fragments_to_reassemble: HashMap::new(),
             inbox: Vec::new(),
-            response_received: false,
             new_messages: 0,
+            response_received: false,
+            last_response_time: None,
         }
     }
 
@@ -337,51 +350,38 @@ impl ChatClientDanylo {
         self.send_to_next_hop(ack)
     }
 
-    /// ###### Handles an incoming flood request by processing its path, ensuring uniqueness, and forwarding it to neighbors.
+    /// todo
+    fn handle_flood_request(&mut self, mut flood_request: FloodRequest, session_id: u64) {
+        // Add client to the flood request's path trace.
+        flood_request.increment(self.id, NodeType::Client);
+
+        // Generate and send the flood response
+        let response = flood_request.generate_response(session_id);
+        self.send_to_next_hop(response);
+    }
+
+    /// ###### Sends a packet to the next hop in the route.
     ///
-    /// This method adds the current node to the flood request's path trace, checks if the flood ID has already been
-    /// processed from the same initiator, and either generates a response or forwards the request to neighboring nodes.
+    /// This method retrieves the sender for the next hop, increments the hop index in the packet's routing header,
+    /// and attempts to send the packet. If the sender is not found or the send operation fails, an error is logged.
     ///
     /// ###### Arguments
-    /// * `flood_request` - The flood request to be processed.
-    /// * `session_id` - The ID of the session associated with the flood request.
-    fn handle_flood_request(&mut self, mut flood_request: FloodRequest, session_id: u64) {
-        // Add current drone to the flood request's path trace.
-        flood_request.increment(self.id, NodeType::Drone);
-
-        let flood_id = flood_request.flood_id;
-        let initiator_id = flood_request.initiator_id;
-
-        // Check if the flood ID has already been received from this flood initiator.
-        if self.floods.get(&initiator_id).map_or(false, |ids| ids.contains(&flood_id)) {
-            // Generate and send the flood response
-            let response = flood_request.generate_response(session_id);
-            self.send_to_next_hop(response);
-            return;
-        }
-
-        // Record the flood ID for the initiator to prevent duplicate processing.
-        self.floods
-            .entry(initiator_id)
-            .or_insert_with(HashSet::new)
-            .insert(flood_id);
-
-        // Retrieve the previous node (sender) from the flood request's path trace.
-        let Some(sender_id) = self.get_prev_node_id(&flood_request.path_trace) else {
-            eprintln!("There's no previous node in the flood path.");
+    /// * `packet` - The packet to be sent to the next hop.
+    fn send_to_next_hop(&mut self, mut packet: Packet) {
+        // Attempt to find the sender for the next hop.
+        let Some(sender) = self.get_sender_of_next(packet.routing_header.clone()) else {
+            eprintln!("There is no sender to the next hop.");
+            self.response_received = true;
             return;
         };
 
-        // Get all neighboring nodes except the sender.
-        let neighbors = self.get_neighbors_except(sender_id);
+        // Increment the hop index in the routing header to reflect progress through the route.
+        packet.routing_header.increase_hop_index();
 
-        // If there are neighbors, forward the flood request to them.
-        if !neighbors.is_empty() {
-            self.forward_flood_request(neighbors, flood_request);
-        } else {
-            // If no neighbors, generate and send a response instead.
-            let response = flood_request.generate_response(session_id);
-            self.send_to_next_hop(response);
+        // Attempt to send the updated fragment packet to the next hop.
+        if sender.send(packet).is_err() {
+            eprintln!("Error sending the packet to next hop.");
+            self.response_received = true;
         }
     }
 
@@ -418,94 +418,6 @@ impl ChatClientDanylo {
         // Use the next hop ID to look up the associated sender in the `packet_send` map.
         // Return a reference to the sender if it exists, or `None` if not found.
         self.packet_send.get(&next_hop_id)
-    }
-
-    /// ###### Sends a packet to the next hop in the route.
-    ///
-    /// This method retrieves the sender for the next hop, increments the hop index in the packet's routing header,
-    /// and attempts to send the packet. If the sender is not found or the send operation fails, an error is logged.
-    ///
-    /// ###### Arguments
-    /// * `packet` - The packet to be sent to the next hop.
-    fn send_to_next_hop(&mut self, mut packet: Packet) {
-        // Attempt to find the sender for the next hop.
-        let Some(sender) = self.get_sender_of_next(packet.routing_header.clone()) else {
-            eprintln!("There is no sender to the next hop.");
-            self.response_received = true;
-            return;
-        };
-
-        // Increment the hop index in the routing header to reflect progress through the route.
-        packet.routing_header.increase_hop_index();
-
-        // Attempt to send the updated fragment packet to the next hop.
-        if sender.send(packet).is_err() {
-            eprintln!("Error sending the packet to next hop.");
-            self.response_received = true;
-        }
-    }
-
-    /// ###### Retrieves the ID of the previous node in the path trace.
-    ///
-    /// This method checks if the path trace contains at least two nodes and returns the ID of the second-to-last node.
-    /// If the path trace has fewer than two nodes, it returns `None`.
-    ///
-    /// ###### Arguments
-    /// * `path_trace` - A vector containing the path trace as pairs of node IDs and their types.
-    ///
-    /// ###### Returns
-    /// * `Option<NodeId>` - The ID of the previous node, or `None` if unavailable.
-    fn get_prev_node_id(&self, path_trace: &Vec<(NodeId, NodeType)>) -> Option<NodeId> {
-        if path_trace.len() > 1 {
-            return Some(path_trace[path_trace.len() - 2].0);
-        }
-        None
-    }
-
-    /// ###### Retrieves all neighboring senders except the specified node ID.
-    ///
-    /// This method iterates through the `packet_send` map, filters out the sender associated with the `exclude_id`,
-    /// and returns a vector of senders for the remaining neighbors.
-    ///
-    /// ###### Arguments
-    /// * `exclude_id` - The ID of the node to be excluded from the list of neighbors.
-    ///
-    /// ###### Returns
-    /// * `Vec<&Sender<Packet>>` - A vector of senders for all neighboring nodes except the excluded one.
-    fn get_neighbors_except(&self, exclude_id: NodeId) -> Vec<&Sender<Packet>> {
-        self.packet_send
-            .iter()
-            .filter(|(&node_id, _)| node_id != exclude_id)
-            .map(|(_, sender)| sender)
-            .collect()
-    }
-
-    /// ###### Forwards a flood request to the specified neighbors.
-    ///
-    /// This method iterates over the provided neighbors and sends the flood request to each one.
-    /// A new routing header is created for each request, and the request is sent as a packet.
-    /// If sending the packet fails, an error message is logged.
-    ///
-    /// ###### Arguments
-    /// * `neighbors` - A vector of senders for the neighboring nodes to which the flood request will be forwarded.
-    /// * `request` - The flood request to be forwarded.
-    fn forward_flood_request(
-        &self,
-        neighbors: Vec<&Sender<Packet>>,
-        request: FloodRequest)
-    {
-        // Iterate over each neighbor
-        for sender in neighbors {
-            // Create an empty routing header, because this is unnecessary in flood request
-            let routing_header = SourceRoutingHeader::empty_route();
-            // Create a new FloodRequest
-            let packet = Packet::new_flood_request(routing_header, 0, request.clone());
-
-            // Attempt to send the updated fragment packet to the next hop.
-            if sender.send(packet.clone()).is_err() {
-                eprintln!("Error sending the packet to the neighbor.");
-            }
-        }
     }
 
     /// Handles a flood response by updating routes, servers, and topology.
