@@ -14,11 +14,7 @@ pub struct MessageFragments {
 }
 
 impl MessageFragments {
-    /// ###### Creates a new `Message` with the given session ID and route.
-    ///
-    /// ###### Arguments
-    /// * `session_id` - A unique identifier for the session.
-    /// * `route` - The sequence of nodes the message will traverse.
+    /// ###### Creates a new `MessageFragments` with the given session ID and route.
     pub fn new(session_id: u64, route: Vec<NodeId>) -> MessageFragments {
         Self {
             fragments: Vec::new(),
@@ -29,15 +25,6 @@ impl MessageFragments {
     }
 
     /// ###### Serializes the provided data and splits it into smaller fragments for sending.
-    ///
-    /// ###### Arguments
-    /// * `data` - The data to be serialized. Must implement the `Serialize` trait.
-    ///
-    /// ###### Returns
-    /// * `true` if the data was successfully serialized and fragmented.
-    /// * `false` if serialization fails.
-    ///
-    /// If serialization fails, the function logs an error (if applicable) and does not modify the state.
     pub fn create_message_of<T: Serialize>(&mut self, data: T) -> bool {
         let serialized_message = match serde_json::to_string(&data) {
             Ok(string) => string,
@@ -49,12 +36,6 @@ impl MessageFragments {
     }
 
     /// ###### Splits a serialized message into fragments of a fixed size.
-    ///
-    /// ###### Arguments
-    /// * `serialized_msg` - The serialized message as a string slice.
-    ///
-    /// ###### Returns
-    /// A vector of `Fragment` objects representing the split message.
     pub fn fragment(&mut self, serialized_msg: &str) -> Vec<Fragment> {
         let serialized_msg_in_bytes = serialized_msg.as_bytes();
         let length_response = serialized_msg_in_bytes.len();
@@ -70,21 +51,7 @@ impl MessageFragments {
             .collect()
     }
 
-    /// ###### Updates the route for the message.
-    ///
-    /// ###### Arguments
-    /// * `route` - The new route for the message.
-    pub fn update_route(&mut self, route: Vec<NodeId>) {
-        self.route = route;
-    }
-
     /// ###### Retrieves the packet for the specified fragment index.
-    ///
-    /// ###### Arguments
-    /// * `fragment_index` - The index of the fragment to retrieve.
-    ///
-    /// ###### Returns
-    /// An `Option<Packet>` containing the packet if the fragment exists, or `None`.
     pub fn get_fragment_packet(&self, fragment_index: usize) -> Option<Packet> {
         if let Some(fragment) = self.fragments.get(fragment_index).cloned() {
             let hops = self.route.clone();
@@ -106,19 +73,8 @@ impl MessageFragments {
     }
 
     /// ###### Retrieves the index of the last fragment.
-    ///
-    /// ###### Returns
-    /// The index of the last fragment.
     pub fn get_last_fragment_index(&self) -> usize {
         self.last_fragment_index
-    }
-
-    /// ###### Retrieves the route.
-    ///
-    /// ###### Returns
-    /// The route.
-    pub fn get_route(&self) -> &Vec<NodeId> {
-        &self.route
     }
 
     /// ###### Increments the index of the last processed or sent fragment.
