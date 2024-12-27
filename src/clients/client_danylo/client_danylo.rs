@@ -201,47 +201,6 @@ impl ChatClientDanylo {
         self.send_to_next_hop(packet);
     }
 
-    /// ###### Resends a packet with a new route after discovery.
-    ///
-    /// This method retrieves the message for the given session, finds a new route to the target server,
-    /// updates the route in the message, and resends the last fragment packet. If no route is found,
-    /// an error is logged.
-    ///
-    /// ###### Arguments
-    /// * `session_id` - The ID of the session for which the packet should be resent.
-    fn resend_with_new_route(&mut self, session_id: u64) {
-        // Retrieve the server ID and last fragment index for the given session.
-        let (server_id, last_index) = {
-            let message = self.messages_to_send.get_mut(&session_id).unwrap();
-
-            let server_id = *message.get_route().last().unwrap();
-            (server_id, message.get_last_fragment_index())
-        };
-
-        let message = self.messages_to_send.get_mut(&session_id).unwrap();
-
-        // Attempt to update the route in the message.
-        if let Some(new_route) = self.routes.get(&server_id) {
-            message.update_route(new_route.clone());
-        } else {
-            eprintln!("There are no routes to server with id {}", server_id);
-            self.response_received = true;
-            return;
-        };
-
-        // Attempt to resend the last fragment.
-        if let Some(fragment) = message.get_fragment_packet(last_index) {
-            // Increment the last fragment index and send the fragment to the next hop.
-            message.increment_last_index();
-            self.send_to_next_hop(fragment);
-        } else {
-            eprintln!(
-                "Failed to retrieve fragment at index {} for session {}",
-                last_index, session_id
-            );
-        }
-    }
-
     /// ###### Handles an incoming message fragment, storing it and reassembling the message if all fragments are received.
     ///
     /// This method adds the fragment to the collection of fragments for the specified session.
