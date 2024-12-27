@@ -51,30 +51,27 @@ pub enum ServerCommand {
 pub enum ServerEvent {
 }
 
+#[derive(Debug)]
 /// From controller to Client
 pub enum ClientCommand {
     //Controller functions
     RemoveSender(NodeId),
     AddSender(NodeId, Sender<Packet>),
-
-    //Client behaviour
-    AskTypeTo(NodeId),
-    StartFlooding,
 }
 
 pub enum ClientEvent {
-
+    PacketSent(Packet),
 }
 
 //Queries (Client -> Server)
 #[derive(Deserialize, Serialize, Debug)]
-pub enum Query{
+pub enum Query {
     //Common-shared
     AskType,
 
     //To Communication Server
-    AddUser(NodeId),
-    AskListUsers,
+    RegisterClient(NodeId),
+    AskListClients,
     SendMessageTo(NodeId, Message),
 
     //To Content Server
@@ -92,9 +89,9 @@ pub enum Response {
     ServerType(ServerType),
 
     //From Communication Server
-    UserAdded,
+    ClientRegistered,
     MessageFrom(NodeId, Message),
-    ListUsers(Vec<NodeId>),
+    ListClients(Vec<NodeId>),
 
     //From Content Server
     //(Text)
