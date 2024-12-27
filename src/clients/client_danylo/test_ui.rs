@@ -19,18 +19,18 @@ pub fn test_ui() {
     c1.topology.insert(2, HashSet::from_iter(vec![1, 4]));
     c1.topology.insert(3, HashSet::from_iter(vec![1, 5]));
 
-    c1.servers.push((4, ServerType::Communication));
-    c1.servers.push((5, ServerType::Communication));
+    c1.servers.insert(4, ServerType::Communication);
+    c1.servers.insert(5, ServerType::Communication);
     c1.is_registered.insert(4, false);
     c1.is_registered.insert(5, true);
 
-    c1.servers.push((6, ServerType::Media));
-    c1.servers.push((7, ServerType::Text));
-    c1.servers.push((8, ServerType::Undefined));
+    c1.servers.insert(6, ServerType::Media);
+    c1.servers.insert(7, ServerType::Text);
+    c1.servers.insert(8, ServerType::Undefined);
 
-    c1.users.push(9);
-    c1.users.push(10);
-    c1.users.push(11);
+    c1.clients.push(9);
+    c1.clients.push(10);
+    c1.clients.push(11);
 
     c1.new_messages = 2;
 
