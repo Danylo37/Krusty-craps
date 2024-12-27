@@ -47,6 +47,18 @@ pub enum ServerCommand {
     AddSender(NodeId, Sender<Packet>)
 }
 
+#[derive(Debug, Clone)]
+pub enum FloodReceivedStatusFromNode {
+    Received(FloodId),   //if the response of the current flood is received
+    NotReceived,         //when we initialize
+}
+
+#[derive(Debug, Clone)]
+pub enum CommunicableType {
+    Yes,
+    No,
+}
+
 ///Server-Controller
 pub enum ServerEvent {
 }
