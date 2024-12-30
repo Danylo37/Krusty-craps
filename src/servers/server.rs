@@ -175,10 +175,9 @@ pub trait Server{
         ///Fragment reassembly
         // Check if it exists already
         if let Some(reassembling_message) = self.get_reassembling_messages().get_mut(&session_id) {
-            let offset = reassembling_message.len();
-            println!("Qua");
 
             // Check for valid fragment index and length
+            let offset = reassembling_message.len();
             if offset + fragment.length as usize > reassembling_message.capacity()
             {
                 println!("Nack");
@@ -187,11 +186,10 @@ pub trait Server{
                 return;
 
             }else if offset as u64 != fragment.fragment_index*128 {
-                logic error: Check if a fragment was skipped and decide if saving data anyway of next fragments waiting for the one fragment that will be sent again
-
+                logic_error
+                //I could just insert the fragment bits inside the proper message, idk if this is too easy but it looks right, i will see after 2nd january
             }
                 else{
-                    println!("Copy");
                     // Copy data to the correct offset in the vector.
                     reassembling_message.extend_from_slice(&data_to_add);
 
@@ -202,7 +200,6 @@ pub trait Server{
             }
 
         }else {
-            println!("Qui");
             //Check if it is only 1 fragment
             if !self.if_all_fragments_received_process(&data_to_add, &fragment, session_id, routing_header)
             {
