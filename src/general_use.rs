@@ -7,7 +7,6 @@ use wg_2024::{
     packet::Packet,
 };
 
-
 pub type Message = String;
 pub type File = String;
 pub type ServerId = NodeId;
@@ -15,9 +14,8 @@ pub type ClientId = NodeId;
 pub type SessionId = u64;
 pub type FloodId = u64;
 pub type FragmentIndex = u64;
-pub type ReceivedOrderId = u64;
-pub type OrderId = u64;
 pub type UsingTimes = u64;  //to measure traffic of fragments in a path.
+
 ///packet sending status
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "debug", derive(PartialEq))]
@@ -44,31 +42,11 @@ pub enum PacketStatus{
     InProgress,             //When we have no ack or nack confirmation
 }
 
-///flood status
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "debug", derive(PartialEq))]
-pub enum FloodStatus{
-    InGoing,
-    Finished(FloodId),
-}
-
 /// From controller to Server
 #[derive(Debug, Clone)]
 pub enum ServerCommand {
     RemoveSender(NodeId),
     AddSender(NodeId, Sender<Packet>)
-}
-
-#[derive(Debug, Clone)]
-pub enum FloodReceivedStatusFromNode {
-    Received(FloodId),   //if the response of the current flood is received
-    NotReceived,         //when we initialize
-}
-
-#[derive(Debug, Clone)]
-pub enum CommunicableType {
-    Yes,
-    No,
 }
 
 ///Server-Controller
@@ -94,7 +72,7 @@ pub enum ClientEvent {
 }
 
 //Queries (Client -> Server)
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub enum Query {
     //Common-shared
     AskType,

@@ -1,15 +1,8 @@
 ///--------------------------
 ///todo!
-/// 1) handling the edge_nodes, also fill with edge_node -> flood_status(edge_node).
-/// 2) maybe do a flooding to update those things when the clients starts to run.
-/// 3) done that we can set the flooding status (InGoing/ Finished(flood_id)) so that when a valid flood_response
-/// is received by all the edge_nodes (clients) through the servers so we will have:
-/// -let m = number_of_server
-/// -let n = number_of_clients(to which communicate)
-/// then each client(as destination) has m number of routes.
-/// only then we can set the flooding status to finished(flood_id).
-
-
+/// 1) maybe do a flooding to update those things when the clients starts to run.
+///
+///Note: when you send the packet with routing the hop_index is increased in the receiving by a drone
 use std::{
     io::empty,
     hash::Hash,
@@ -32,12 +25,8 @@ use crate::general_use::{ClientId,
                          ServerId,
                          SessionId,
                          FragmentIndex,
-                         ReceivedOrderId,
                          ClientCommand,
                          ClientEvent,
-                         CommunicableType,
-                         FloodReceivedStatusFromNode,
-                         FloodStatus,
                          Message,
                          NotSentType,
                          PacketStatus,
@@ -46,7 +35,6 @@ use crate::general_use::{ClientId,
                          ServerType,
                          Speaker,
                          File,
-                         OrderId,
                          UsingTimes,
 };
 
@@ -60,17 +48,14 @@ pub struct ClientChen {
     flood_id: FloodId,
     session_id: SessionId,
     packets_status: HashMap<(SessionId, FragmentIndex), PacketStatus>, //map every packet with the status of sending
-    flood_status: FloodStatus,                                                 //status of the current flooding: still in progress or not
-    flood_received_nodes: HashMap<NodeId, FloodReceivedStatusFromNode>,
-    received_node_order_id: ReceivedOrderId,
 
     //communication info
     connected_nodes_ids: Vec<NodeId>, //I think better HashSet<(NodeId, NodeType)>, but given that we can ask for type.
     server_registered: HashMap<ServerId, Vec<ClientId>>, //All the servers registered by the client and it's respective list of client registered
                                                          //Notice that if the client is registered to the server then the Vec<ClientId> contains this client.
-    servers: HashMap<ServerId, ServerType>,
-    edge_nodes: HashMap<NodeId, NodeType>,  //All the nodes that are not drones, which are all the servers and all the clients
-    communicable_nodes: HashMap<NodeId, CommunicableType>,
+    servers: HashMap<ServerId, ServerType>,  //All the servers.
+    edge_nodes: HashMap<NodeId, NodeType>,  //All the nodes that are not drones, which are all the servers and all the clients discovered
+    communicable_nodes: HashSet<NodeId>,   //Thanks that the NodeId type is u8 so it is Hashable
     routing_table: HashMap<NodeId, HashMap<Vec<(NodeId, NodeType)>, UsingTimes>>, //a map that for each destination we have a path according
                                                              //to the protocol
     //communication tools
@@ -106,16 +91,13 @@ impl ClientChen {
             flood_id: 0, //initial value to be 0 for every new client
             session_id: (node_id as u64) << 56, //e.g. just put the id of the client at the first 8 bits like 10100101 0000... because the node_id is 8 bits and we use it as identifier
             packets_status: HashMap::new(),
-            flood_status: FloodStatus::Finished(0),
-            flood_received_nodes: HashMap::new(),   //are the nodes from which we received an acceptable flood response
-            received_node_order_id: 0,
 
             //communication info
             connected_nodes_ids,
             servers: HashMap::new(),
             server_registered: HashMap::new(),
             edge_nodes: HashMap::new(),    //because for now the NodeType is not Hashable.
-            communicable_nodes: HashMap::new(),
+            communicable_nodes: HashSet::new(),
             routing_table: HashMap::new(),
 
             //communication tools
@@ -155,7 +137,6 @@ impl ClientChen {
         }
         }
     }
-
 
     /// STRUCTURE OF THE CODE:
     ///-sending packets methods
@@ -216,6 +197,31 @@ impl ClientChen {
     }
 
     pub fn send_packet_to_connected_node(&mut self, target_node_id: NodeId, packet: Packet) {
+        let path_trace = packet.routing_header.hops
+            .iter()
+            .map(|&node_id| {
+                // Look up the node_id in edge_nodes, defaulting to NodeType::Drone if not found
+                let node_type = self.edge_nodes.get(&node_id).unwrap_or(&NodeType::Drone);
+                (node_id, *node_type) // Return a tuple of (NodeId, NodeType)
+            })
+            .collect::<Vec<_>>();
+
+        // Increase `using_times` by 1 for the corresponding route
+        if let Some(routes) = self.routing_table.get_mut(&packet.routing_header.destination().unwrap()) {
+            if let Some(using_times) = routes.get_mut(&path_trace) { //there are always some using times because it is initialized to 0 for every route
+                *using_times += 1;
+            }
+        }
+
+        //insert the packet in output buffer, output_packet_dist, packet_status
+        self.output_buffer.insert((packet.session_id, match packet.clone().pack_type{
+            PacketType::MsgFragment(fragment) => fragment.fragment_index,
+            _=> 0,
+        }), packet.clone());
+
+        self.output_packet_disk.insert((packet.session_id, 0), packet.clone());
+        self.packets_status.insert((packet.session_id, 0), PacketStatus::InProgress);
+
         if self.connected_nodes_ids.contains(&target_node_id) {
             if let Some(sender) = self.packet_send.get_mut(&target_node_id) {
                 match sender.send(packet.clone()) {
@@ -233,24 +239,14 @@ impl ClientChen {
     }
 
     fn send_query(&mut self, server_id: ServerId, query: Query) {
-        let messages = Self::msg_to_fragments(query, server_id);
-
-        for message in messages {
-            // Extract session ID and optional fragment index for the key
-            let key = (
-                message.session_id,
-                match message.pack_type.clone(){
-                    PacketType::MsgFragment(fragment) => fragment.fragment_index,
-                    _ => 0,
-                }
-            );
-
-            // Insert the message into both buffers
-            self.output_buffer.insert(key.clone(), message.clone());
-            self.output_packet_disk.insert(key, message);
-            self.packets_status.insert(key, PacketStatus::NotSent(NotSentType::ToBeSent));
-
-            //the rest is controlled in the send with checking status.
+        if let Some(messages) = Self::msg_to_fragments(query.clone(), server_id) {
+            for message in messages {
+                // if you send the messages, it automatically updates the buffers and status and packet disk
+                self.send_with_routing(message);
+            }
+        } else {
+            // Log or handle the case where no fragments are returned
+            warn!("No fragments returned for query: {:?}", query);
         }
     }
 
@@ -273,42 +269,43 @@ impl ClientChen {
             slices.push(string[start..valid_end].to_string());
             start = valid_end;
         }
-
         slices
     }
-    pub fn msg_to_fragments<T: Serialize>(msg: T, destination_id: NodeId) -> HashSet<Packet> {
+
+    pub fn msg_to_fragments<T: Serialize>(msg: T, destination_id: NodeId) -> Option<HashSet<Packet>> {
         let serialized_msg = serde_json::to_string(&msg).unwrap();
         let mut fragments = HashSet::new(); //fragments are of type Packet
         let msg_slices = Self::divide_string_into_slices(serialized_msg, FRAGMENT_DSIZE);
         let number_of_fragments = msg_slices.len();
 
-        let source_routing_header = Self.get_source_routing_header(destination_id).unwrap();
+        if let Some(source_routing_header) = Self.get_source_routing_header(destination_id){
+            Self.session_id += 1;
+            //the i is counted from 0 so it's perfect suited in our case
+            for (i, slice) in msg_slices.into_iter().enumerate() {
+                //Convert each slice of the message into the same format of the field data of the struct Fragment.
+                let slice_bytes = slice.as_bytes();
+                let fragment_data = {
+                    let mut buffer = [0u8; FRAGMENT_DSIZE]; // Create a buffer with the exact required size
+                    let slice_length = std::cmp::min(slice_bytes.len(), FRAGMENT_DSIZE); // Ensure no overflow
+                    buffer[..slice_length].copy_from_slice(&slice_bytes[..slice_length]);
+                    buffer
+                };
 
-        Self.session_id += 1;
-        //the i is counted from 0 so it's perfect suited in our case
-        for (i, slice) in msg_slices.into_iter().enumerate() {
-            //Convert each slice of the message into the same format of the field data of the struct Fragment.
-            let slice_bytes = slice.as_bytes();
-            let fragment_data = {
-                let mut buffer = [0u8; FRAGMENT_DSIZE]; // Create a buffer with the exact required size
-                let slice_length = std::cmp::min(slice_bytes.len(), FRAGMENT_DSIZE); // Ensure no overflow
-                buffer[..slice_length].copy_from_slice(&slice_bytes[..slice_length]);
-                buffer
-            };
+                let fragment = Fragment {
+                    fragment_index: i as u64,
+                    total_n_fragments: number_of_fragments as u64,
+                    length: slice.len() as u8, //Note u8 is 256 but actually "length< <= FRAGMENT_DSIZE = 128"
+                    data: fragment_data,       //Fragment data
+                };
 
-            let fragment = Fragment {
-                fragment_index: i as u64,
-                total_n_fragments: number_of_fragments as u64,
-                length: slice.len() as u8, //Note u8 is 256 but actually "length< <= FRAGMENT_DSIZE = 128"
-                data: fragment_data,       //Fragment data
-            };
-
-            let routing_header = source_routing_header.clone();
-
-            let packet = Packet::new_fragment(routing_header, Self.session_id, fragment);
-            fragments.insert(packet);
+                let routing_header = source_routing_header.clone();
+                let packet = Packet::new_fragment(routing_header, Self.session_id, fragment);
+                fragments.insert(packet);
+            }
+            Some(fragments)
+        }else{
+            None
         }
-        fragments
     }
 
     fn update_packet_status(
@@ -322,7 +319,6 @@ impl ClientChen {
             .and_modify(|current_status| *current_status = status.clone())
             .or_insert(status);
     }
-
 
     fn create_ack_packet_from_receiving_packet(&mut self, packet: Packet) -> Packet{
         let routing_header = SourceRoutingHeader{
@@ -342,7 +338,6 @@ impl ClientChen {
     ///--------------------------------------------------------------------------------------------------------------
     /// reassembling received fragments
 
-
     fn get_total_n_fragments(&mut self) -> Option<u64> {
         self.fragment_assembling_buffer.keys().next().and_then(|first_key| {
             self.fragment_assembling_buffer.get(first_key).and_then(|first_fragment_packet| {
@@ -353,7 +348,6 @@ impl ClientChen {
             })
         })
     }
-
     fn handle_fragments_in_buffer_with_checking_status<T: Serialize>(&mut self){
         if self.fragment_assembling_buffer.iter().len() as u64 == self.get_total_n_fragments().unwrap() {
             let first_key = self.fragment_assembling_buffer.keys().next().unwrap();
@@ -375,11 +369,11 @@ impl ClientChen {
                 Response::ListClients(list_users) => {
                     //note that in order to receive the list of clients the client is already registered to that server
                     for user_id in list_users{
-                        self.communicable_nodes.insert(user_id, CommunicableType::Yes);
+                        self.communicable_nodes.insert(user_id);
                     }
                 },
 
-                //todo! handle these files when lillo is ready.
+                //todo! handle these files when lillo has ready in mind what are the media files
                 Response::ListFiles(list_files) => {}
                 Response::File(file_path) => {}
                 Response::Media(media) => {}
@@ -387,9 +381,6 @@ impl ClientChen {
                 _=> {}
             }
         }
-        //todo! if for every server in self.server_registered and if for every clients in server_registered
-        //we have a flood_response so map: ClientId-> FloodReceivedFromNode::Received(flood_id) && flood_id == self.flood_id
-        //then the flood_status = Finished. To think again!
     }
 
     fn reassemble_fragments_in_buffer<T: Serialize + for<'de> Deserialize<'de>>(&mut self) -> T {
@@ -425,22 +416,20 @@ impl ClientChen {
                 panic!("Missing packet for key: {:?}", key);
             }
         }
-
         // Deserialize the fully assembled string
         match serde_json::from_str(&serialized_entire_msg) {
             Ok(deserialized_msg) => deserialized_msg,
             Err(e) => panic!("Failed to deserialize message: {}", e),
         }
     }
-
     ///---------------------------------------------------------------------------------------------------------------------
     /// routing methods
     fn get_packet_destination(packet: Packet) -> NodeId {
-        let destination = packet.routing_header.hops.last().unwrap().clone();
+        let destination = packet.routing_header.destination().unwrap();
         destination
     }
 
-    /// find best source routing header sort by the keys of OrderId and the UsageTimes,in order to improve the efficiency of
+    /// find best source routing header sort by the keys of OrderId and the UsageTimes, in order to improve the efficiency of
     fn get_source_routing_header(&mut self, destination_id: NodeId) -> Option<SourceRoutingHeader> {
         if let Some(routes) = self.routing_table.get(&destination_id) {
             if let Some(min_using_times) = routes.values().min() {
@@ -451,15 +440,18 @@ impl ClientChen {
                     .min_by_key(|path| path.len())
                 {
                     // Transform the best path into a vector of NodeId and initialize hop_index to 1
-                    let hops = best_path.iter().map(|&(node_id, _)| node_id).collect();
+                    let hops = self.get_hops_from_path_trace(best_path.clone());
                     return Some(SourceRoutingHeader::new(hops, 1));
                 }
             }
         }
         None
     }
-
-
+    fn get_hops_from_path_trace(&mut self, path_trace: Vec<(NodeId, NodeType)>) -> Vec<NodeId> {
+        // Transform the best path into a vector of NodeId and initialize hop_index to 1
+        let hops = path_trace.iter().map(|&(node_id, _)| node_id).collect();
+        hops
+    }
 
     fn removal_node(&mut self, node_id: NodeId) {
         for (_, paths_to_node) in self.routing_table.iter_mut() {
@@ -491,8 +483,13 @@ impl ClientChen {
     }
 
     fn do_flooding(&mut self) {
+        //new ids for the flood and new session because of the flood response packet
         self.flood_id += 1;
         self.session_id += 1;
+
+        self.routing_table.clear();
+        self.communicable_nodes.clear();
+
 
         // Initialize the flood request with the current flood_id, id, and node type
         let flood_request = FloodRequest::initialize(self.flood_id, self.node_id, NodeType::Client);
@@ -510,9 +507,10 @@ impl ClientChen {
         }
     }
 
-    fn handle_flood_request(&mut self, mut request: FloodRequest) {
+    fn handle_flood_request(&mut self, packet: Packet ,mut request: FloodRequest) {
+        //store in the input packet disk
+        self.input_packet_disk.insert((packet.session_id, 0), packet);   //because this packet is not any fragment packet.
         //general idea: prepare a flood response and send it back.
-        //1. create a flood response packet
         self.session_id += 1;
         request.path_trace.push((self.node_id, self.node_type));
         let mut response: Packet = request.generate_response(self.session_id);
@@ -521,35 +519,90 @@ impl ClientChen {
         response.routing_header.hop_index = 1;
 
         //2. send it back
-        self.send_with_routing(response);    //so it is a direct response and doesn't need to wait in the buffer, because
-                                             //of the select biased function is prioritizing this send in respect to the others.
-    }
+        if let Some(routes) = self.routing_table.get(&response.clone().routing_header.destination().unwrap()){
+            if !routes.is_empty(){
+                self.send_with_routing(response.clone());
+                //so it is a direct response and doesn't need to wait in the buffer, because
+                //of the select biased function is prioritizing this send in respect to the others.
+                //then if this flood response is not received by any one then there will be a nack of this packet sent back from a drone
+                //then we need to handle it.
+                }
+            } else{ //if we don't have routes
+                //we insert regardless thanks to the non repeat mechanism of the hashmaps
+                self.packets_status.insert((response.session_id, 0), PacketStatus::NotSent(NotSentType::ToBeSent));
+                self.output_buffer.insert((response.session_id, 0), response.clone());
+            }
+        }
+
 
 
     ///REMINDER:
     ///we assume that the server when receives a flood_request from a client/server, it both:
     ///1) sends back a flood_response to the client
     ///2) forwards the flood_request to his neighbors, (the flood_request stops until encounters a client).
-    fn handle_flood_response(&mut self, response: FloodResponse) {
-        //destination client/server id
+    fn handle_flood_response(&mut self, packet: Packet, response: FloodResponse) {
+        self.input_packet_disk.insert((packet.session_id, 0), packet);
         if let Some((destination_id, destination_type)) = response.path_trace.last().cloned() {
-            if destination_type != NodeType::Drone {
-                self.edge_nodes.insert(destination_id, destination_type);
-                if self.routing_table.get(&destination_id).is_none() && response.flood_id == self.flood_id {
-                    // Initialize a new HashMap for the destination_id if it doesn't exist
-                    self.routing_table
-                        .entry(destination_id)
-                        .or_insert_with(HashMap::new)
-                        .insert(response.path_trace.clone(), 0); // Insert the path_trace with an initial UsingTimes 0
-                }
+            // Ignore drones or mismatched flood IDs
+            if destination_type == NodeType::Drone || response.flood_id != self.flood_id {
+                return;
             }
-            if destination_type == NodeType::Server {
-                self.send_query(destination_id, Query::AskListClients);
+            // Update edge nodes
+            self.edge_nodes.insert(destination_id, destination_type);
+
+            // Update the routing table and communicable nodes
+            match destination_type {
+                NodeType::Server => {
+                    self.update_routing_for_server(destination_id, response.path_trace);
+                }
+                NodeType::Client => {
+                    self.update_routing_for_client(destination_id, response.path_trace);
+                }
+                _ => {}
             }
         }
     }
 
+    fn update_routing_for_server(&mut self, destination_id: NodeId, path_trace: Vec<(NodeId,NodeType)>) {
+        //update the communicable_nodes
+        self.communicable_nodes.insert(destination_id);  //regardless for the server
+        self.send_query(destination_id, Query::AskType);
+        self.send_query(destination_id, Query::AskListClients);
+        self.routing_table
+            .entry(destination_id)
+            .or_insert_with(HashMap::new)
+            .insert(path_trace.clone(),0);   //why using times is 0, because we do the flooding when all the routing table is cleared.
+    }
 
+    fn update_routing_for_client(&mut self, destination_id: NodeId, path_trace: Vec<(NodeId,NodeType)>) {
+        let hops = self.get_hops_from_path_trace(path_trace.clone());
+        //update the routes only if the routes are valid
+        if self.check_if_exists_registered_server_intermediary_in_route(hops) {
+            self.routing_table
+                .entry(destination_id)
+                .or_insert_with(HashMap::new)
+                .insert(path_trace, 0);
+            self.communicable_nodes.insert(destination_id); //regardless if before there is
+        }
+    }
+
+    fn check_if_exists_registered_server_intermediary_in_route(&mut self, route: Vec<NodeId>) -> bool {
+        for &server_id in self.server_registered.keys(){
+            if route.contains(&server_id) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn check_if_exists_route_contains_server(&mut self, server_id: ServerId, destination_id: ClientId) -> bool {
+        for route in self.routing_table.get(&destination_id).unwrap() {
+            if route.0.contains(*server_id){
+                return true;
+            }
+        }
+        false
+    }
 
     ///-------------------------------------------------------------------------------------------------------------
     ///various packets handling methods
@@ -564,29 +617,32 @@ impl ClientChen {
         }
     }
     fn handle_received_packet(&mut self, packet: Packet) {
-        //send an ack instantly
-        let ack_packet = self.create_ack_packet_from_receiving_packet(packet.clone());
-        self.send_with_routing(ack_packet);
         //insert the packets into the input disk
-
+        self.decreasing_using_times_when_receiving_packet(&packet);
         self.input_packet_disk.insert((self.session_id, match packet.pack_type{
             PacketType::MsgFragment(Some(fragment)) => {
                 self.fragment_assembling_buffer.insert((self.session_id, fragment.fragment_index), packet.clone());
-                fragment.fragment_index},
-            _ => 0,
-        }),
-            packet.clone());
+                fragment.fragment_index
+            },
+            _ => 0, }), packet.clone());
 
         match packet.clone().pack_type {
             PacketType::Nack(nack) => self.handle_nack(packet, nack),
             PacketType::Ack(ack) => self.handle_ack(packet, ack),
             PacketType::MsgFragment(fragment) => self.handle_fragment(packet, fragment),
-            PacketType::FloodRequest(flood_request) => self.handle_flood_request(flood_request),
-            PacketType::FloodResponse(flood_response) => self.handle_flood_response(flood_response),
+            PacketType::FloodRequest(flood_request) => self.handle_flood_request(packet, flood_request),
+            PacketType::FloodResponse(flood_response) => self.handle_flood_response(packet, flood_response),
         }
     }
 
-    fn update_route_on_packet_response(&mut self, packet: &Packet) {
+    ///FOR THE SERVER:
+    /// notice the increasing using_times when sending packet is done in sending to connected nodes in edge nodes
+    ///note that just the drones don't need to do that, the servers need to do that but only the part of the route
+    ///that cuts the nodes before the server.
+    ///and when the server receives an ack_packet directed to the original sender_client then the server
+    ///decreases the using times of the first part of the route and increases the second part of the route
+    ///contained in the source routing header of the ack_packet.
+    fn decreasing_using_times_when_receiving_packet(&mut self, packet: &Packet) {
         // Reverse the hops to get the correct order for path trace
         let hops = packet.routing_header.hops.iter().rev().collect::<Vec<_>>();
         let destination_id = *hops.last().unwrap().clone();
@@ -609,9 +665,6 @@ impl ClientChen {
 
     /// Handles ACK packets.
     fn handle_ack(&mut self, ack_packet: Packet, ack: Ack) {
-        // Update routing path usage (UsingTimes - 1)
-        self.update_route_on_packet_response(&ack_packet);
-
         // Remove the fragment/packet corresponding to the ACK
         let packet_key = (ack_packet.session_id - 1, ack.fragment_index);
         self.packets_status
@@ -619,15 +672,10 @@ impl ClientChen {
             .and_modify(|status| *status = PacketStatus::Sent)
             .or_insert(PacketStatus::Sent);
         self.output_buffer.remove(&packet_key);
-
-
     }
 
     /// Handles NACK packets.
     fn handle_nack(&mut self, nack_packet: Packet, nack: Nack) {
-        // Update routing path usage (UsingTimes - 1)
-        self.update_route_on_packet_response(&nack_packet);
-
         // Handle specific NACK types
         match nack.nack_type.clone() {
             NackType::ErrorInRouting(node_id) =>  self.handle_error_in_routing(node_id, nack_packet, nack),
@@ -641,21 +689,18 @@ impl ClientChen {
     fn handle_error_in_routing(&mut self, node_id: NodeId, nack_packet: Packet, nack: Nack) {
         info!("Drone is crashed or or sender not found {}", node_id);
         self.update_packet_status(nack_packet.session_id-1, nack.fragment_index, PacketStatus::NotSent(NotSentType::RoutingError));
-        match self.flood_status {
-            FloodStatus::Finished(flood_id) => {
-                if (flood_id != self.flood_id) {
-                    self.do_flooding();
-                    self.flood_status = FloodStatus::InGoing;
-                }
-            },
-            _ => {}
-            ///do nothing, because in both case (when the flood response from the packet destination is received or not)
-            /// we can wait till the FloodStatus is Finished, and then we try to resend again, then
-            ///if it gives another nack, knowing that the FloodStatus is Finished, so we can
-            ///do another flooding to update the better route.
+        //if using get the mapping the destination of the packet (identified by nack_packet.session_id-1, nack.fragment_index)
+        //we have None then the current flooding isn't finished for that destination then we need to wait for the flood response
+        //to come such that the routing table is updated.
+        //otherwise if we already have we need to do a flooding to update all the routes to that node.
+        if self.routing_table.get(&(self.output_buffer.get(&*(nack_packet.session_id-1, nack.fragment_index)))) != None{
+            self.do_flooding();
+        } else{
+            //wait
         }
-        //the post-part of the handling is done in the send_packets_in_buffer_checking_status
+        //the post-part of the handling is done in the handling flooding response
     }
+
 
     fn handle_destination_is_drone(&mut self, nack_packet: Packet, nack: Nack) {
         self.update_packet_status(nack_packet.session_id-1, nack.fragment_index, PacketStatus::NotSent(NotSentType::DroneDestination));
@@ -682,9 +727,12 @@ impl ClientChen {
     ///create ack_packet and send it
 
     fn handle_fragment(&mut self, msg_packet: Packet, fragment: Fragment) {
+        self.decreasing_using_times_when_receiving_packet(&msg_packet);
         self.input_packet_disk.insert((msg_packet.session_id, fragment.fragment_index), msg_packet.clone());
         self.fragment_assembling_buffer.insert((msg_packet.session_id, fragment.fragment_index), msg_packet.clone());
-        //the ack packet is sent immediately for every single packet received so already did in handle_received_packet()
+        //send an ack instantly
+        let ack_packet = self.create_ack_packet_from_receiving_packet(msg_packet.clone());
+        self.send_with_routing(ack_packet);
     }
 
     ///things that a client does
