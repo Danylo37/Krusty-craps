@@ -123,7 +123,6 @@ pub trait Server{
     fn send_ack(&self, ack: Ack, routing_header: SourceRoutingHeader, session_id: u64) {
         let packet= Self::create_packet(PacketType::Ack(ack), routing_header, session_id);
         self.send_packet(packet);
-        //It is not printing "Ack reveived in client"
     }
 
     //PACKET
@@ -186,7 +185,7 @@ pub trait Server{
                 return;
 
             }else if offset as u64 != fragment.fragment_index*128 {
-                logic_error
+                //logic_error
                 //I could just insert the fragment bits inside the proper message, idk if this is too easy but it looks right, i will see after 2nd january
             }
                 else{
@@ -284,9 +283,9 @@ pub trait Server{
         let offset = fragment_index*128;
         let mut data:[u8;128] = [0;128];
         if offset > length_response as u64 {
-            data[0..(message_and_destination.0.len() as u64 - offset)].copy_from_slice(&message_and_destination.0[offset as usize..message_and_destination.0.len()]);
+            data[0..(message_and_destination.0.len() as u64 - offset) as usize].copy_from_slice(&message_and_destination.0[offset as usize..message_and_destination.0.len()]);
         }else{
-            data.copy_from_slice(&message_and_destination.0[offset..(offset+128)]);
+            data.copy_from_slice(&message_and_destination.0[offset as usize..(offset+128) as usize]);
         }
 
 
