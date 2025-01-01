@@ -79,6 +79,7 @@ pub enum Query {
 
     //To Communication Server
     RegisterClient(NodeId),
+    UnregisterClient(NodeId),
     AskListClients,
     SendMessageTo(NodeId, Message),
 

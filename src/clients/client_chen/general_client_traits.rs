@@ -1,38 +1,4 @@
-use std::{
-    io::empty,
-    hash::Hash,
-    collections::{HashMap, HashSet},
-    thread, vec,
-    string::String,
-};
-use serde::{Deserialize, Serialize};
-use crossbeam_channel::{select_biased, Receiver, Sender};
-use log::{debug, error, info, warn};
-use wg_2024::{
-    network::{NodeId, SourceRoutingHeader},
-    packet::{
-        Ack, FloodRequest, FloodResponse, Fragment, Nack, NackType, NodeType, Packet, PacketType,
-        FRAGMENT_DSIZE,
-    },
-};
-use crate::general_use::{ClientId,
-                         FloodId,
-                         ServerId,
-                         SessionId,
-                         FragmentIndex,
-                         ClientCommand,
-                         ClientEvent,
-                         Message,
-                         NotSentType,
-                         PacketStatus,
-                         Query,
-                         Response,
-                         ServerType,
-                         Speaker,
-                         File,
-                         UsingTimes,
-};
-
+use crate::clients::client_chen::prelude::*;
 pub trait Sending{
     fn send_packets_in_buffer_with_checking_status(&mut self);//when you run the client
 
@@ -48,6 +14,7 @@ pub trait Sending{
     fn handle_sent_packet(&mut self, packet: Packet);
     fn handle_not_sent_packet(&mut self, packet: Packet, not_sent_type: NotSentType, destination: NodeId);
     fn update_packet_status(&mut self, session_id: SessionId, fragment_index: FragmentIndex, status: PacketStatus);
+
 }
 
 
@@ -80,16 +47,8 @@ pub trait PacketCreator{
     fn get_source_routing_header(&mut self, destination_id: NodeId) -> Option<SourceRoutingHeader>;
 
 }
-pub trait FragmentAssembler{
-    fn handle_fragments_in_buffer_with_checking_status<T: Serialize>(&mut self);  //when you run
 
-    ///principal methods
-    fn get_total_n_fragments(&mut self, session_id: SessionId) -> Option<u64>;
-    fn reassemble_fragments_in_buffer<T: Serialize + for<'de> Deserialize<'de>>(&mut self) -> T;
 
-}
-
-///todo! subtraits for receiving packets:
 pub trait PacketsReceiver{
     fn handle_received_packet(&mut self, packet: Packet);
     fn decreasing_using_times_when_receiving_packet(&mut self, packet: &Packet);
@@ -114,32 +73,48 @@ pub trait FloodingPacketsHandler:PacketsReceiver{  //flood request/response
     fn handle_flood_request(&mut self, packet: Packet, request: FloodRequest);
     fn handle_flood_response(&mut self, packet: Packet, response: FloodResponse);
 
-
     ///auxiliary functions
 
 }
 
 pub trait FragmentsHandler:PacketsReceiver{ //message fragments
     fn handle_fragment(&mut self, msg_packet: Packet, fragment: Fragment);
-    fn reassemble_fragments_in_buffer<T: Serialize + for<'de> Deserialize<'de>>(&mut self) -> T;
 
     ///auxiliary functions
     fn get_total_n_fragments(&mut self, session_id: SessionId) -> Option<u64>;
+    fn handle_fragments_in_buffer_with_checking_status<T: Serialize>(&mut self);  //when you run
+
+    ///principal methods
+    fn reassemble_fragments_in_buffer<T: Serialize + for<'de> Deserialize<'de>>(&mut self) -> T;
 
 }
 
-///todo! command handler
 pub trait CommandHandler{
     fn handle_controller_command(&mut self, command: ClientCommand);
 }
 
 pub trait ServerQuery{
-    fn register_to_server(&mut self, server_id: NodeId);
-    ///todo! other Query operation functions
-
+    fn register_to_server(&mut self, server_id: ServerId);
+    fn unregister_from_server(&mut self, server_id: ServerId);
+    fn ask_server_type(&mut self, server_id: ServerId);
+    fn ask_list_clients(&mut self, server_id: ServerId);
+    fn send_message_to_client(&mut self, server_id: ServerId, message: Message);
+    fn ask_list_files(&mut self, server_id: ServerId);  //all the files that a server has, so not a specific file_ref (or file_index)
+    fn ask_file(&mut self, server_id: ServerId, file_ref: u8);
+    fn ask_media(&mut self, server_id: ServerId, media_ref: String);  //string is the reference found in the files
     ///auxiliary functions
-    fn discovered_servers(&mut self) -> HashSet<ServerId>;
+    fn get_discovered_servers(&mut self) -> HashSet<ServerId>;
 }
+
+
+pub trait ClientEvents{
+    fn message_sent_to_client(&mut self, message: Message);
+    fn message_received_from_client(&mut self, message: Message);
+    fn message_received_from_server(&mut self, message: Message);
+
+}
+
+
 
 
 
