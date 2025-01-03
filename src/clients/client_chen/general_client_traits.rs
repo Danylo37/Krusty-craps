@@ -4,6 +4,7 @@ pub trait Sending{
 
     ///principal sending methods
     fn send(&mut self, packet: Packet);
+    fn send_events(&mut self, client_event: ClientEvent);
     fn send_query(&mut self, server_id: ServerId, query: Query);
 
     fn send_packet_to_connected_node(&mut self, target_node_id: NodeId, packet: Packet);
@@ -34,6 +35,13 @@ pub trait Router{
 
 }
 
+pub trait CommunicationTools{
+    fn get_discovered_servers_from_topology(&mut self) -> HashSet<ServerId>;
+    fn get_edge_nodes_from_topology(&mut self) -> HashSet<NodeId>;
+    fn get_communicable_clients_from_registered_servers(&mut self) -> HashSet<ClientId>;
+    fn get_communicable_nodes(&mut self) -> HashSet<NodeId>;
+}
+
 pub trait PacketCreator{
     ///creating fragment packet
     fn divide_string_into_slices(&mut self, string: String, max_slice_length: usize) -> Vec<String>;
@@ -45,7 +53,7 @@ pub trait PacketCreator{
     fn get_packet_destination(packet: Packet) -> NodeId;
     fn get_hops_from_path_trace(&mut self, path_trace: Vec<(NodeId, NodeType)>) -> Vec<NodeId>;
     fn get_source_routing_header(&mut self, destination_id: NodeId) -> Option<SourceRoutingHeader>;
-
+    fn hops_to_path_trace(&mut self, hops: Vec<NodeId>) -> Vec<(NodeId, NodeType)>;
 }
 
 
@@ -98,12 +106,12 @@ pub trait ServerQuery{
     fn unregister_from_server(&mut self, server_id: ServerId);
     fn ask_server_type(&mut self, server_id: ServerId);
     fn ask_list_clients(&mut self, server_id: ServerId);
-    fn send_message_to_client(&mut self, server_id: ServerId, message: Message);
+    fn send_message_to_client(&mut self, server_id: ServerId, client_id: ClientId, message: Message);
     fn ask_list_files(&mut self, server_id: ServerId);  //all the files that a server has, so not a specific file_ref (or file_index)
     fn ask_file(&mut self, server_id: ServerId, file_ref: u8);
     fn ask_media(&mut self, server_id: ServerId, media_ref: String);  //string is the reference found in the files
     ///auxiliary functions
-    fn get_discovered_servers(&mut self) -> HashSet<ServerId>;
+    //fn get_discovered_servers(&mut self) -> HashSet<ServerId>;
 }
 
 

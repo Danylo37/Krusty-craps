@@ -2,7 +2,6 @@
 ///todo!
 /// 1) maybe do a flooding to update those things when the clients starts to run.
 /// 2) protocol communication between the client and simulation controller
-/// 3) modularity of the project
 /// 4) function of updating the topology
 /// 5) testing
 /// Note: when you send the packet with routing the hop_index is increased in the receiving by a drone
@@ -13,65 +12,23 @@ use crate::clients::client_chen::{CommandHandler, FragmentsHandler, PacketsRecei
 pub(crate) struct ClientChen {
     // Client's metadata
     pub(crate) metadata: ClientMetadata,
-
     // Status information
     pub(crate) status: ClientStatus,
-
     // Communication-related data
     pub(crate) communication: CommunicationInfo,
-
     // Communication tools
     pub(crate) communication_tools: CommunicationTools,
-
     // Storage for packets and messages
     pub(crate) storage: ClientStorage,
+    // Information about the current network topology
+    pub(crate) network_info: NetworkInfo,
 }
 
-// Metadata about the client
-pub(crate) struct ClientMetadata {
-    pub(crate) node_id: NodeId,
-    pub(crate) node_type: NodeType,
-}
-
-// Status of the client
-pub(crate) struct ClientStatus {
-    pub(crate) flood_id: FloodId,
-    pub(crate) session_id: SessionId,
-}
-
-// Communication-related information
-pub(crate) struct CommunicationInfo {
-    pub(crate) connected_nodes_ids: Vec<NodeId>, // Alternatively, HashSet<(NodeId, NodeType)> if uniqueness is required
-    pub(crate) server_registered: HashMap<ServerId, Vec<ClientId>>, // Servers registered by the client with respective registered clients
-    pub(crate) servers: HashMap<ServerId, ServerType>,  // All servers
-    pub(crate) edge_nodes: HashMap<NodeId, NodeType>,  // Non-drone nodes: servers and discovered clients
-    pub(crate) communicable_nodes: HashSet<NodeId>,   // Communicable nodes
-    pub(crate) routing_table: HashMap<NodeId, HashMap<Vec<(NodeId, NodeType)>, UsingTimes>>, // Routing information per protocol
-}
-
-// Tools for communication
-pub(crate) struct CommunicationTools {
-    pub(crate) packet_send: HashMap<NodeId, Sender<Packet>>,  // Sender for each connected node
-    pub(crate) packet_recv: Receiver<Packet>,                // Unique receiver for this client
-    pub(crate) controller_send: Sender<ClientEvent>,         // Sender for Simulation Controller
-    pub(crate) controller_recv: Receiver<ClientCommand>,     // Receiver for Simulation Controller
-}
-
-// Storage-related data
-pub struct ClientStorage {
-    pub(crate) fragment_assembling_buffer: HashMap<(SessionId, FragmentIndex), Packet>, // Temporary storage for recombining fragments
-    pub(crate) output_buffer: HashMap<(SessionId, FragmentIndex), Packet>,              // Buffer for outgoing messages
-    pub(crate) input_packet_disk: HashMap<(SessionId, FragmentIndex), Packet>,          // Storage for received packets
-    pub(crate) output_packet_disk: HashMap<(SessionId, FragmentIndex), Packet>,         // Storage for sent packets
-    pub(crate) packets_status: HashMap<(SessionId, FragmentIndex), PacketStatus>,       // Map every packet with the status of sending
-    pub(crate) message_chat: HashMap<ClientId, Vec<(Speaker, Message)>>,               // Chat messages with other clients
-    pub(crate) file_storage: HashMap<ServerId, File>,                                  // Files received from media servers
-}
 impl ClientChen {
     pub(crate) fn new(
         node_id: NodeId,
         node_type: NodeType,
-        connected_nodes_ids: Vec<NodeId>,
+        connected_nodes_ids: HashSet<NodeId>,
         packet_send: HashMap<NodeId, Sender<Packet>>,
         packet_recv: Receiver<Packet>,
         controller_send: Sender<ClientEvent>,
@@ -93,10 +50,7 @@ impl ClientChen {
             // Communication-related data
             communication: CommunicationInfo {
                 connected_nodes_ids,
-                servers: HashMap::new(),
                 server_registered: HashMap::new(),
-                edge_nodes: HashMap::new(),
-                communicable_nodes: HashSet::new(),
                 routing_table: HashMap::new(),
             },
 
@@ -118,9 +72,23 @@ impl ClientChen {
                 message_chat: HashMap::new(),
                 file_storage: HashMap::new(),
             },
+
+            // Network Info
+            network_info: NetworkInfo{
+              topology: HashMap::new(),
+            },
+
         }
     }
 
+
+    ///the client needs to obey to the controller commands
+    ///then when there are packets arriving, need to handle them:
+    /// -storing the fragments in the fragment buffer in order to reassemble them, send an ack for each of them
+    /// -storing all the packets in the input packet disk (we don't unify the input packet disk with the output
+    ///  packet disk because otherwise we need another protocol to manage them and I don't want to think much about it)
+    ///
+    ///in the free time, you need to handle the fragments in the buffer and send the packets in the buffer
     pub(crate) fn run(&mut self) {
         loop {
             select_biased! {
@@ -142,6 +110,93 @@ impl ClientChen {
         }
     }
 }
+
+// Metadata about the client
+pub(crate) struct ClientMetadata {
+    pub(crate) node_id: NodeId,
+    pub(crate) node_type: NodeType,
+}
+
+// Status of the client
+pub(crate) struct ClientStatus {
+    pub(crate) flood_id: FloodId,
+    pub(crate) session_id: SessionId,
+}
+
+// Communication-related information
+pub(crate) struct CommunicationInfo {
+    pub(crate) connected_nodes_ids: HashSet<NodeId>,
+    pub(crate) server_registered: HashMap<ServerId, Vec<ClientId>>, // Servers registered by the client with respective registered clients
+    pub(crate) routing_table: HashMap<NodeId, HashMap<Vec<(NodeId, NodeType)>, UsingTimes>>, // Routing information per protocol
+}
+
+// Tools for communication
+pub(crate) struct CommunicationTools {
+    pub(crate) packet_send: HashMap<NodeId, Sender<Packet>>,  // Sender for each connected node
+    pub(crate) packet_recv: Receiver<Packet>,                // Unique receiver for this client
+    pub(crate) controller_send: Sender<ClientEvent>,         // Sender for Simulation Controller
+    pub(crate) controller_recv: Receiver<ClientCommand>,     // Receiver for Simulation Controller
+}
+
+// Storage-related data
+pub struct ClientStorage {
+    pub(crate) fragment_assembling_buffer: HashMap<(SessionId, FragmentIndex), Packet>, // Temporary storage for recombining fragments
+    pub(crate) output_buffer: HashMap<(SessionId, FragmentIndex), Packet>,              // Buffer for outgoing messages
+    pub(crate) input_packet_disk: HashMap<(SessionId, FragmentIndex), Packet>,          // Storage for received packets
+    pub(crate) output_packet_disk: HashMap<(SessionId, FragmentIndex), Packet>,         // Storage for sent packets
+    pub(crate) packets_status: HashMap<(SessionId, FragmentIndex), PacketStatus>,       // Map every packet with the status of sending
+    pub(crate) message_chat: HashMap<ClientId, Vec<(Speaker, Message)>>,               // Chat messages with other clients
+    pub(crate) file_storage: HashMap<ServerId, File>,                                  // Files received from media servers
+}
+
+pub(crate) struct NetworkInfo{
+    pub(crate) topology: HashMap<NodeId, NodeInfo>,
+}
+
+
+pub struct NodeInfo{
+    pub(crate) node_id: NodeId,
+    pub(crate) node_type: NodeType,
+    pub(crate) specific_info: SpecificInfo,
+}
+pub enum SpecificInfo{
+    ClientInfo(ClientInformation),
+    ServerInfo(ServerInformation),
+    DroneInfo(DroneInformation),
+}
+
+pub struct ClientInformation{
+    pub(crate) connected_nodes_ids: HashSet<NodeId>,
+}
+
+pub struct ServerInformation{
+    pub(crate) connected_nodes_ids: HashSet<NodeId>,
+    pub(crate) server_type: ServerType,
+}
+
+pub struct DroneInformation{
+    pub(crate) connected_nodes_ids: HashSet<NodeId>,
+    pub(crate) drone_brand: DroneBrand,
+}
+
+
+pub enum DroneBrand{
+    KrustyDrone,  // Our Drone
+    RustyDrone,
+    Rustable,
+    BagelBomber,
+    RustAndFurious,
+    Fungi,
+    RustBusters,
+    RustEze,
+    SkyLink,
+    RollingDrones,
+    BobryWLucie,
+
+    //
+    Undefined,
+}
+
 
     ///PROTOCOL NOTES:
 

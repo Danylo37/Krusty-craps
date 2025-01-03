@@ -1,5 +1,6 @@
 use crate::clients::client_chen::{ClientChen, PacketCreator};
 use crate::clients::client_chen::prelude::*;
+use crate::clients::client_chen::general_client_traits::*;
 impl PacketCreator for ClientChen{
     fn divide_string_into_slices(&mut self, string: String, max_slice_length: usize) -> Vec<String> {
         let mut slices = Vec::new();
@@ -43,7 +44,7 @@ impl PacketCreator for ClientChen{
                 let fragment = Fragment {
                     fragment_index: i as u64,
                     total_n_fragments: number_of_fragments as u64,
-                    length: slice.len() as u8, //Note u8 is 256 but actually "length< <= FRAGMENT_DSIZE = 128"
+                    length: slice.len() as u8, //Note u8 is 256 but actually "length <= FRAGMENT_DSIZE = 128"
                     data: fragment_data,       //Fragment data
                 };
 
@@ -100,5 +101,19 @@ impl PacketCreator for ClientChen{
             }
         }
         None
+    }
+
+    fn hops_to_path_trace(&mut self, hops: Vec<NodeId>) -> Vec<(NodeId, NodeType)> {
+            hops
+            .iter()
+            .map(|&node_id| {
+                // Look up the node_id in edge_nodes, defaulting to NodeType::Drone if not found
+                if let Some(node_info) = self.network_info.topology.get(&node_id) {
+                    (node_id, node_info.node_type)
+                } else {
+                    (node_id, NodeType::Drone)
+                }
+            })
+            .collect::<Vec<_>>()
     }
 }

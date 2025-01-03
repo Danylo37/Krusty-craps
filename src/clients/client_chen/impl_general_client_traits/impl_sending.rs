@@ -1,5 +1,6 @@
 use crate::clients::client_chen::{ClientChen, PacketCreator, Router, Sending};
 use crate::clients::client_chen::prelude::*;
+use crate::clients::client_chen::general_client_traits::*;
 impl Sending for ClientChen {
     fn send_packets_in_buffer_with_checking_status(&mut self){
         for &(session_id, fragment_index) in self.storage.output_buffer.keys(){
@@ -9,10 +10,18 @@ impl Sending for ClientChen {
     }
 
     ///principal sending methods
-    fn send(&mut self, packet: Packet) {    //send with routing
-        self.send_packet_to_connected_node(packet.routing_header.current_hop().unwrap(), packet);
+    fn send(&mut self, packet: Packet) {
+        if let Some(next_hop) = packet.routing_header.next_hop() {
+            self.send_packet_to_connected_node(next_hop, packet);
+        } else {
+            // Handle the case where there is no next hop
+            eprintln!("No next hop available for packet: {:?}", packet);
+        }
     }
 
+    fn send_events(&mut self, client_event: ClientEvent){
+        self.communication_tools.controller_send.send(client_event).expect("Client event not successfully sent");
+    }
     fn send_query(&mut self, server_id: ServerId, query: Query) {
         if let Some(messages) = self.msg_to_fragments(query.clone(), server_id) {
             for message in messages {
@@ -25,14 +34,7 @@ impl Sending for ClientChen {
         }
     }
     fn send_packet_to_connected_node(&mut self, target_node_id: NodeId, packet: Packet) {
-        let path_trace = packet.routing_header.hops
-            .iter()
-            .map(|&node_id| {
-                // Look up the node_id in edge_nodes, defaulting to NodeType::Drone if not found
-                let node_type = self.communication.edge_nodes.get(&node_id).unwrap_or(&NodeType::Drone);
-                (node_id, *node_type) // Return a tuple of (NodeId, NodeType)
-            })
-            .collect::<Vec<_>>();
+        let path_trace = self.hops_to_path_trace(packet.clone().routing_header.hops);
 
         // Increase `using_times` by 1 for the corresponding route
         if let Some(routes) = self.communication.routing_table.get_mut(&packet.routing_header.destination().unwrap()) {

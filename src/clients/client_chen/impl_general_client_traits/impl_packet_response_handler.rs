@@ -1,6 +1,6 @@
-use log::info;
-use crate::clients::client_chen::{Ack, ClientChen, Nack, NackType, NodeId, Packet, PacketResponseHandler, Router, Sending};
-use crate::general_use::{NotSentType, PacketStatus};
+use crate::clients::client_chen::{ClientChen, PacketResponseHandler, Router, Sending};
+use crate::clients::client_chen::prelude::*;
+use crate::clients::client_chen::general_client_traits::*;
 
 impl PacketResponseHandler for ClientChen {
     fn handle_ack(&mut self, ack_packet: Packet, ack: Ack) {

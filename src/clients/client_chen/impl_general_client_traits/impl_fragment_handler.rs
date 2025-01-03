@@ -1,5 +1,6 @@
-use crate::clients::client_chen::{ClientChen, FragmentsHandler, PacketCreator, PacketsReceiver, Sending};
+use crate::clients::client_chen::{ClientChen, FragmentsHandler, PacketCreator, PacketsReceiver, Sending, SpecificInfo};
 use crate::clients::client_chen::prelude::*;
+use crate::clients::client_chen::general_client_traits::*;
 impl FragmentsHandler for ClientChen{
     fn handle_fragment(&mut self, msg_packet: Packet, fragment: Fragment) {
         self.decreasing_using_times_when_receiving_packet(&msg_packet);
@@ -50,7 +51,10 @@ impl FragmentsHandler for ClientChen{
 
                     match message {
                         Response::ServerType(ServerType) => {
-                            self.communication.servers.insert(initiator_id, ServerType);
+                            let entry = self.network_info.topology.entry(initiator_id).or_default();
+                            if let SpecificInfo::ServerInfo(server_info) = &mut entry.specific_info{
+                                server_info.server_type = ServerType;
+                            }
                         }
                         Response::ClientRegistered => {
                             self.communication.server_registered.insert(initiator_id, vec![self.metadata.node_id]);
@@ -62,9 +66,7 @@ impl FragmentsHandler for ClientChen{
                                 .push((Speaker::HimOrHer, message));
                         }
                         Response::ListClients(list_users) => {
-                            for user_id in list_users {
-                                self.communication.communicable_nodes.insert(user_id);
-                            }
+                            self.communication.server_registered.insert(initiator_id, list_users);
                         }
                         Response::ListFiles(_) | Response::File(_) | Response::Media(_) => {
                             // Placeholder for file/media handling

@@ -1,5 +1,6 @@
 use crate::clients::client_chen::{ClientChen, CommandHandler};
 use crate::clients::client_chen::prelude::*;
+use crate::clients::client_chen::general_client_traits::*;
 
 impl CommandHandler for ClientChen{
     fn handle_controller_command(&mut self, command: ClientCommand) {

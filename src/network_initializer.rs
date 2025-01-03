@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use std::{env, fs, thread};
 use crossbeam_channel::*;
@@ -180,7 +180,7 @@ impl NetworkInit {
             //clone the things to be cloned for problems of moving.
             let client_events_sender_clone = client_events_sender.clone();
             //connection
-            let mut connected_nodes_ids = topology.get(&client.id).unwrap().clone();
+            let mut connected_nodes_ids: HashSet<_> = topology.get(&client.id).unwrap().clone().into_iter().collect();
             let connected_nodes_ids_clone = connected_nodes_ids.clone();
             //packet senders
             let mut packet_senders_collection = HashMap::new();

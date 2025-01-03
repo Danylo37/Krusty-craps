@@ -1,17 +1,17 @@
-use log::info;
 use crate::clients::client_chen::{ClientChen, PacketsReceiver, PacketResponseHandler, FragmentsHandler, FloodingPacketsHandler};
 use crate::clients::client_chen::prelude::*;
-
+use crate::clients::client_chen::general_client_traits::*;
 impl PacketsReceiver for ClientChen {
     fn handle_received_packet(&mut self, packet: Packet) {
         //insert the packets into the input disk
         self.decreasing_using_times_when_receiving_packet(&packet);
-        self.storage.input_packet_disk.insert((self.status.session_id, match packet.pack_type{
+        self.storage.input_packet_disk.insert((self.status.session_id, match packet.pack_type {
             PacketType::MsgFragment(Some(fragment)) => {
                 self.storage.fragment_assembling_buffer.insert((self.status.session_id, fragment.fragment_index), packet.clone());
                 fragment.fragment_index
             },
-            _ => 0, }), packet.clone());
+            _ => 0,
+        }), packet.clone());
 
         match packet.clone().pack_type {
             PacketType::Nack(nack) => self.handle_nack(packet, nack),
@@ -24,25 +24,28 @@ impl PacketsReceiver for ClientChen {
 
     fn decreasing_using_times_when_receiving_packet(&mut self, packet: &Packet) {
         // Reverse the hops to get the correct order for path trace
-        let hops = packet.routing_header.hops.iter().rev().collect::<Vec<_>>();
-        let destination_id = *hops.last().unwrap().clone();
-        let path_trace = hops
-            .iter()
-            .map(|&&node_id| {
-                // Look up the node_id in edge_nodes, defaulting to NodeType::Drone if not found
-                let node_type = self.communication.edge_nodes.get(&node_id).unwrap_or(&NodeType::Drone);
-                (node_id, *node_type) // Return a tuple of (NodeId, NodeType)
-            })
-            .collect::<Vec<_>>();
+        let hops: Vec<_> = packet.routing_header.hops.iter().rev().cloned().collect();
+
+        // Ensure hops are not empty
+        if hops.is_empty() {
+            return; // Exit early if there are no hops
+        }
+
+        // Get the destination ID from the last hop
+        let destination_id = hops.last().copied().unwrap();
+
+        // Construct the path trace
+        let path_trace: Vec<_> = self.hops_to_path_trace(hops);
 
         // Decrease `using_times` by 1 for the corresponding route
         if let Some(routes) = self.communication.routing_table.get_mut(&destination_id) {
             if let Some(using_times) = routes.get_mut(&path_trace) {
-                *using_times -= 1;
+                if *using_times > 0 {
+                    *using_times -= 1; // Prevent underflow
+                }
             }
         }
     }
 }
-
 
 
