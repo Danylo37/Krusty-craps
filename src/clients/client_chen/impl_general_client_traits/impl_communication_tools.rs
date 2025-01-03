@@ -27,7 +27,7 @@ impl CommunicationTools for ClientChen{
     ///just looping without worrying about repetitions
     fn get_communicable_clients_from_registered_servers(&mut self) -> HashSet<ClientId> {
         let mut communicable_clients = HashSet::new();
-        for registered_clients in self.communication.server_registered.values() {
+        for registered_clients in self.communication.registered_communication_servers.values() {
             for client in registered_clients {
                 communicable_clients.insert(*client);
             }

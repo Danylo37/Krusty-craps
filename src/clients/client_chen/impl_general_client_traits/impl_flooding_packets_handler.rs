@@ -4,39 +4,45 @@ use crate::clients::client_chen::general_client_traits::*;
 
 impl FloodingPacketsHandler for ClientChen {
     fn handle_flood_request(&mut self, packet: Packet, mut request: FloodRequest) {
-        //store in the input packet disk
-        self.storage.input_packet_disk.insert((packet.session_id, 0), packet);   //because this packet is not any fragment packet.
-        //general idea: prepare a flood response and send it back.
+        // Store in the input packet disk (not a fragment).
+        self.storage.input_packet_disk.insert((packet.session_id, 0), packet);
+
+        // Prepare the flood response.
         self.status.session_id += 1;
         request.path_trace.push((self.metadata.node_id, self.metadata.node_type));
-        let mut response: Packet = request.generate_response(self.status.session_id);
+        let response = request.generate_response(self.status.session_id);
 
-        //hop_index is again set to 1 because you want to send back using the same path.
-        //response.routing_header.hop_index = 0; this line is not needed because
-        //it is already included in the generate_response function
-
-        //2. send it back
-        if let Some(routes) = self.communication.routing_table.get(&response.clone().routing_header.destination().unwrap()) {
-            if !routes.is_empty() {
-                self.send(response.clone());
-                //so it is a direct response and doesn't need to wait in the buffer, because
-                //of the select biased function is prioritizing this send in respect to the others.
-                //then if this flood response is not received by any one then there will be a nack of this packet sent back from a drone
-                //then we need to handle it.
+        // Try to find routes for the response.
+        if let Some(destination_id) = response.routing_header.destination() {
+            if let Some(routes) = self.communication.routing_table.get(&destination_id) {
+                // If there are routes, send the response.
+                if !routes.is_empty() {
+                    self.send(response.clone());
+                    // No need to buffer, it's a direct response.
+                    return;  // We successfully sent the packet, no need to proceed.
+                }
             }
-        } else { //if we don't have routes
-            //we insert regardless thanks to the non repeat mechanism of the hashmaps
-            self.storage.packets_status.insert((response.session_id, 0), PacketStatus::NotSent(NotSentType::ToBeSent));
-            self.storage.output_buffer.insert((response.session_id, 0), response.clone());
         }
-    }
 
+        // If no routes or empty routes, buffer the response.
+        self.storage.packets_status.insert(
+            (response.session_id, 0),
+            PacketStatus::NotSent(NotSentType::ToBeSent),
+        );
+        self.storage.output_buffer.insert((response.session_id, 0), response.clone());
+        self.storage.output_packet_disk.insert((response.session_id, 0), response);
+    }
 
     /// When you receive a flood response, you need first to update the topology with the elements of the path_traces
     /// everyone's connected_node_ids (using the hashset's methods).
     fn handle_flood_response(&mut self, packet: Packet, response: FloodResponse) {
+
+        if response.flood_id != self.status.flood_id{
+            return;
+        }
         // Insert the packet into the input_packet_disk with session_id as key
         self.storage.input_packet_disk.insert((packet.session_id, 0), packet);
+        self.storage.irresolute_path_traces.insert(response.path_trace.clone());
 
         // Update the network topology and connect nodes in the path trace
         let mut path_iter = response.path_trace.iter().peekable();

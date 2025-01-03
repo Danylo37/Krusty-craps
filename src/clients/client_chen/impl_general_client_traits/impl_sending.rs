@@ -1,6 +1,8 @@
 use crate::clients::client_chen::{ClientChen, PacketCreator, Router, Sending};
 use crate::clients::client_chen::prelude::*;
 use crate::clients::client_chen::general_client_traits::*;
+use crate::general_use::NotSentType::ToBeSent;
+
 impl Sending for ClientChen {
     fn send_packets_in_buffer_with_checking_status(&mut self){
         for &(session_id, fragment_index) in self.storage.output_buffer.keys(){
@@ -14,7 +16,7 @@ impl Sending for ClientChen {
         if let Some(next_hop) = packet.routing_header.next_hop() {
             self.send_packet_to_connected_node(next_hop, packet);
         } else {
-            // Handle the case where there is no next hop
+            // When there is no next hop, do nothing, the packet needs to be dropped.
             eprintln!("No next hop available for packet: {:?}", packet);
         }
     }
@@ -50,16 +52,23 @@ impl Sending for ClientChen {
         }), packet.clone());
 
         self.storage.output_packet_disk.insert((packet.session_id, 0), packet.clone());
-        self.storage.packets_status.insert((packet.session_id, 0), PacketStatus::InProgress);
+
 
         if self.communication.connected_nodes_ids.contains(&target_node_id) {
             if let Some(sender) = self.communication_tools.packet_send.get_mut(&target_node_id) {
                 match sender.send(packet.clone()) {
-                    Ok(_) => debug!("Packet sent to node {}", target_node_id),
-                    Err(err) => error!("Failed to send packet to node {}: {}", target_node_id, err),
+                    Ok(_) => {
+                        debug!("Packet sent to node {}", target_node_id);
+                        self.storage.packets_status.insert((packet.session_id, 0), PacketStatus::InProgress);
+                    },
+                    Err(err) => {
+                        error!("Failed to send packet to node {}: {}", target_node_id, err);
+                        self.storage.packets_status.insert((packet.session_id, 0), PacketStatus::NotSent(ToBeSent));
+                    }
                 }
             } else {
                 warn!("No sender channel found for node {}", target_node_id);
+                self.storage.packets_status.insert((packet.session_id, 0), PacketStatus::NotSent(ToBeSent));
             }
         }
     }

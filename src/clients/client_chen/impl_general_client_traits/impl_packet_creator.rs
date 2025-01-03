@@ -73,7 +73,7 @@ impl PacketCreator for ClientChen{
         ack_packet
     }
 
-    fn get_packet_destination(packet: Packet) -> NodeId {
+    fn get_packet_destination(packet: &Packet) -> NodeId {
         let destination = packet.routing_header.destination().unwrap();
         destination
     }

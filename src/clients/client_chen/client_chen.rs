@@ -7,7 +7,7 @@
 /// Note: when you send the packet with routing the hop_index is increased in the receiving by a drone
 
 use crate::clients::client_chen::prelude::*;
-use crate::clients::client_chen::{CommandHandler, FragmentsHandler, PacketsReceiver, Sending};
+use crate::clients::client_chen::{CommandHandler, FragmentsHandler, PacketsReceiver, Router, Sending};
 
 pub(crate) struct ClientChen {
     // Client's metadata
@@ -50,7 +50,8 @@ impl ClientChen {
             // Communication-related data
             communication: CommunicationInfo {
                 connected_nodes_ids,
-                server_registered: HashMap::new(),
+                registered_communication_servers: HashMap::new(),
+                registered_content_servers: HashSet::new(),
                 routing_table: HashMap::new(),
             },
 
@@ -64,10 +65,11 @@ impl ClientChen {
 
             // Storage
             storage: ClientStorage {
+                irresolute_path_traces: HashSet::new(),
                 fragment_assembling_buffer: HashMap::new(),
                 output_buffer: HashMap::new(),
-                input_packet_disk: HashMap::new(),
-                output_packet_disk: HashMap::new(),
+                input_packet_disk: HashMap::new(),   //if at the end of the implementation still doesn't need then delete
+                output_packet_disk: HashMap::new(),  //if at the end of the implementation still doesn't need then delete
                 packets_status: HashMap::new(),
                 message_chat: HashMap::new(),
                 file_storage: HashMap::new(),
@@ -105,6 +107,7 @@ impl ClientChen {
             default(std::time::Duration::from_millis(10)) => {
                 self.handle_fragments_in_buffer_with_checking_status();
                 self.send_packets_in_buffer_with_checking_status();
+                self.update_routing_checking_status();
             },
         }
         }
@@ -126,7 +129,8 @@ pub(crate) struct ClientStatus {
 // Communication-related information
 pub(crate) struct CommunicationInfo {
     pub(crate) connected_nodes_ids: HashSet<NodeId>,
-    pub(crate) server_registered: HashMap<ServerId, Vec<ClientId>>, // Servers registered by the client with respective registered clients
+    pub(crate) registered_communication_servers: HashMap<ServerId, Vec<ClientId>>, // Servers registered by the client with respective registered clients
+    pub(crate) registered_content_servers: HashSet<ServerId>,
     pub(crate) routing_table: HashMap<NodeId, HashMap<Vec<(NodeId, NodeType)>, UsingTimes>>, // Routing information per protocol
 }
 
@@ -140,6 +144,7 @@ pub(crate) struct CommunicationTools {
 
 // Storage-related data
 pub struct ClientStorage {
+    pub(crate) irresolute_path_traces: HashSet<Vec<(NodeId, NodeType)>>,   //Temporary storage for the path_traces that are received but we didn't know how to process them
     pub(crate) fragment_assembling_buffer: HashMap<(SessionId, FragmentIndex), Packet>, // Temporary storage for recombining fragments
     pub(crate) output_buffer: HashMap<(SessionId, FragmentIndex), Packet>,              // Buffer for outgoing messages
     pub(crate) input_packet_disk: HashMap<(SessionId, FragmentIndex), Packet>,          // Storage for received packets

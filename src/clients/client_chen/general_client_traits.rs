@@ -1,4 +1,7 @@
+use std::vec;
 use crate::clients::client_chen::prelude::*;
+use crate::clients::client_chen::ServerInformation;
+
 pub trait Sending{
     fn send_packets_in_buffer_with_checking_status(&mut self);//when you run the client
 
@@ -24,14 +27,13 @@ pub trait Router{
     fn do_flooding(&mut self);
     fn update_routing_for_server(&mut self, destination_id: NodeId, path_trace: Vec<(NodeId,NodeType)>);
     fn update_routing_for_client(&mut self, destination_id: NodeId, path_trace: Vec<(NodeId,NodeType)>);
-
+    fn update_routing_checking_status(&mut self);
     ///auxiliary function
-    fn check_if_exists_registered_server_intermediary_in_route(&mut self, route: Vec<NodeId>) -> bool;
+    fn check_if_exists_registered_communication_server_intermediary_in_route(&mut self, route: Vec<NodeId>) -> bool;
     fn check_if_exists_route_contains_server(&mut self, server_id: ServerId, destination_id: ClientId) -> bool;
     fn get_flood_response_initiator(&mut self, flood_response: FloodResponse) -> NodeId;
     fn filter_flood_responses_from_wanted_destination(&mut self, wanted_destination_id: NodeId) -> HashSet<u64>;
     fn if_current_flood_response_from_wanted_destination_is_received(&mut self, wanted_destination_id: NodeId) -> bool;
-
 
 }
 
@@ -81,8 +83,6 @@ pub trait FloodingPacketsHandler:PacketsReceiver{  //flood request/response
     fn handle_flood_request(&mut self, packet: Packet, request: FloodRequest);
     fn handle_flood_response(&mut self, packet: Packet, response: FloodResponse);
 
-    ///auxiliary functions
-
 }
 
 pub trait FragmentsHandler:PacketsReceiver{ //message fragments
@@ -91,6 +91,9 @@ pub trait FragmentsHandler:PacketsReceiver{ //message fragments
     ///auxiliary functions
     fn get_total_n_fragments(&mut self, session_id: SessionId) -> Option<u64>;
     fn handle_fragments_in_buffer_with_checking_status<T: Serialize>(&mut self);  //when you run
+
+    fn process_message<T: Serialize>(&mut self, initiator_id: NodeId, message: T);
+    fn register_client(&mut self, server_info: &mut ServerInformation, initiator_id: NodeId);
 
     ///principal methods
     fn reassemble_fragments_in_buffer<T: Serialize + for<'de> Deserialize<'de>>(&mut self) -> T;

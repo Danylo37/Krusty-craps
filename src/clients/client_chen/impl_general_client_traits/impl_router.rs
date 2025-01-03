@@ -30,8 +30,14 @@ impl Router for ClientChen{
 
     fn update_routing_for_server(&mut self, destination_id: NodeId, path_trace: Vec<(NodeId,NodeType)>) {
         //ask some necessary queries to the server, to get the communicable clients as early as possible.
+        let removed = self.storage.irresolute_path_traces.remove(&path_trace);
+        if removed {
+            println!("path_trace {:?} is valid and it's correctly processed", path_trace);
+        } else {
+            println!("path_trace {:?} is not correctly processed", path_trace);
+        }
         self.send_query(destination_id, Query::AskType);
-        self.send_query(destination_id, Query::AskListClients);
+        self.send_query(destination_id, Query::AskListClients);   //for this query the content server will eventually not drop a response.
         self.communication.routing_table
             .entry(destination_id)
             .or_insert_with(HashMap::new)
@@ -48,7 +54,7 @@ impl Router for ClientChen{
     /// buffer, if there are no routes the status of the packet will be not sent because of no routes
     /// so we need to check to the flood response (of current flood id) from the client, if
     /// it is inside the input packet disk then we will filter those routes and update the valid
-    /// routes in the routing table, otherwise we need to wait for the flood response to arrive.
+    /// routes in the routing table, otherwise we need to wait for the flood response to arrive.  (IMPLEMENTED)
     ///
     /// Alternative protocol: just need the routes to the servers and don't update routing for the client
     /// such that in order to send a packet to a client, you send a query to a server
@@ -56,23 +62,46 @@ impl Router for ClientChen{
     /// SendPacketTo(client_id, packet), and the server will process the packet
     /// and send it to the client.
     /// (drawback: this alternative you need to send to the server
-    /// instead of sending to the client directly)
+    /// instead of sending to the client directly)                     (STILL TO IMPLEMENT)
     ///
     /// (advantage: you don't need to memorize that much of routing)
     fn update_routing_for_client(&mut self, destination_id: NodeId, path_trace: Vec<(NodeId,NodeType)>) {
         let hops = self.get_hops_from_path_trace(path_trace.clone());
         //update the routes only if the routes are valid
-        if self.check_if_exists_registered_server_intermediary_in_route(hops) {
+        if self.check_if_exists_registered_communication_server_intermediary_in_route(hops) {
+            //if exists a registered communication server that it is an intermediary between two clients then it will be ok
+            let removed = self.storage.irresolute_path_traces.remove(&path_trace);
+            if removed {
+                println!("path_trace {:?} is valid and it's correctly processed", path_trace);
+            } else {
+                println!("path_trace {:?} is not correctly processed", path_trace);
+            }
             self.communication.routing_table
                 .entry(destination_id)
                 .or_insert_with(HashMap::new)
                 .insert(path_trace, 0);
+        } else{
+            //the path_trace is still irresolute, that's a clever way
+        }
+    }
+
+    fn update_routing_checking_status(&mut self) {
+        for path_trace in self.storage.irresolute_path_traces {
+            //get the destination, if the destination is server then update for server, if the destination is client
+            //then update for client, if the destination is drone then drop it.
+            if let Some(&(destination_id, destination_type)) = path_trace.last(){
+                if destination_type == NodeType::Server {
+                    self.update_routing_for_server(destination_id, path_trace);
+                } else if destination_type == NodeType::Client {
+                    self.update_routing_for_client(destination_id, path_trace);
+                }
+            }
         }
     }
 
     ///auxiliary function
-    fn check_if_exists_registered_server_intermediary_in_route(&mut self, route: Vec<NodeId>) -> bool {
-        for &server_id in self.communication.server_registered.keys(){
+    fn check_if_exists_registered_communication_server_intermediary_in_route(&mut self, route: Vec<NodeId>) -> bool {
+        for &server_id in self.communication.registered_communication_servers.keys(){
             if route.contains(&server_id) {
                 return true;
             }

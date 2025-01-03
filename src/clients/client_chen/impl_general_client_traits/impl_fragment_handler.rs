@@ -1,4 +1,4 @@
-use crate::clients::client_chen::{ClientChen, FragmentsHandler, PacketCreator, PacketsReceiver, Sending, SpecificInfo};
+use crate::clients::client_chen::{ClientChen, FragmentsHandler, PacketCreator, PacketsReceiver, Sending, ServerInformation, SpecificInfo};
 use crate::clients::client_chen::prelude::*;
 use crate::clients::client_chen::general_client_traits::*;
 impl FragmentsHandler for ClientChen{
@@ -25,6 +25,7 @@ impl FragmentsHandler for ClientChen{
     }
 
     fn handle_fragments_in_buffer_with_checking_status<T: Serialize>(&mut self) {
+        // Aggregate session IDs and their corresponding fragment IDs
         let sessions: HashMap<SessionId, Vec<FragmentIndex>> = self
             .storage
             .fragment_assembling_buffer
@@ -34,52 +35,71 @@ impl FragmentsHandler for ClientChen{
                 acc
             });
 
+        // Iterate over each session and process fragments
         for (session_id, fragments) in sessions {
             if let Some(total_n_fragments) = self.get_total_n_fragments(session_id) {
                 if fragments.len() as u64 == total_n_fragments {
-                    // Get the first fragment for the session
-                    let first_key = self.storage.fragment_assembling_buffer
-                        .keys()
-                        .find(|&&(session, _)| session == session_id)
-                        .unwrap();
+                    // Get the first fragment for the session (avoid redundant lookup)
+                    if let Some((first_key, first_packet)) = self.storage.fragment_assembling_buffer
+                        .iter()
+                        .find(|(&(session, _), _)| session == session_id)
+                    {
+                        // Get the packet destination
+                        let initiator_id = Self::get_packet_destination(first_packet);
 
-                    // Use the corresponding packet
-                    let first_packet = self.storage.fragment_assembling_buffer.get(first_key).unwrap();
+                        // Reassemble the fragments into the final message
+                        let message: T = self.reassemble_fragments_in_buffer();
 
-                    let initiator_id = Self::get_packet_destination(first_packet.clone());
-                    let message: T = self.reassemble_fragments_in_buffer();
-
-                    match message {
-                        Response::ServerType(ServerType) => {
-                            let entry = self.network_info.topology.entry(initiator_id).or_default();
-                            if let SpecificInfo::ServerInfo(server_info) = &mut entry.specific_info{
-                                server_info.server_type = ServerType;
-                            }
-                        }
-                        Response::ClientRegistered => {
-                            self.communication.server_registered.insert(initiator_id, vec![self.metadata.node_id]);
-                        }
-                        Response::MessageFrom(client_id, message) => {
-                            self.storage.message_chat
-                                .entry(client_id)
-                                .or_insert_with(Vec::new)
-                                .push((Speaker::HimOrHer, message));
-                        }
-                        Response::ListClients(list_users) => {
-                            self.communication.server_registered.insert(initiator_id, list_users);
-                        }
-                        Response::ListFiles(_) | Response::File(_) | Response::Media(_) => {
-                            // Placeholder for file/media handling
-                        }
-                        Response::Err(error) => {
-                            eprintln!("Error received: {:?}", error);
-                        }
-                        _ => {
-                            // Handle other cases if necessary
-                        }
+                        // Process the message based on its type
+                        self.process_message(initiator_id, message);
                     }
                 }
             }
+        }
+    }
+
+    fn process_message<T: Serialize>(&mut self, initiator_id: NodeId, message: T) {
+        match message {
+            Response::ServerType(server_type) => {
+                if let Some(entry) = self.network_info.topology.entry(initiator_id).or_default().specific_info {
+                    if let SpecificInfo::ServerInfo(mut server_info) = entry {
+                        server_info.server_type = server_type;
+                    }
+                }
+            }
+            Response::ClientRegistered => {
+                if let Some(entry) = self.network_info.topology.entry(initiator_id).or_default().specific_info {
+                    if let SpecificInfo::ServerInfo(server_info) = entry {
+                        self.register_client(server_info, initiator_id);
+                    }
+                }
+            }
+            Response::MessageFrom(client_id, message) => {
+                self.storage.message_chat
+                    .entry(client_id)
+                    .or_insert_with(Vec::new)
+                    .push((Speaker::HimOrHer, message));
+            }
+            Response::ListClients(list_users) => {
+                self.communication.registered_communication_servers.insert(initiator_id, list_users);
+            }
+            Response::ListFiles(_) | Response::File(_) | Response::Media(_) => {
+                // Placeholder for file/media handling
+            }
+            Response::Err(error) => {
+                eprintln!("Error received: {:?}", error);
+            }
+            _ => {
+                // Handle other cases if necessary
+            }
+        }
+    }
+
+    fn register_client(&mut self, server_info: &mut ServerInformation, initiator_id: NodeId) {
+        if let ServerType::Communication = server_info.server_type {
+            self.communication.registered_communication_servers.insert(initiator_id, vec![self.metadata.node_id]);
+        } else if let ServerType::Text | ServerType::Media = server_info.server_type {
+            self.communication.registered_content_servers.insert(initiator_id);
         }
     }
     fn reassemble_fragments_in_buffer<T: Serialize + for<'de> Deserialize<'de>>(&mut self) -> T {

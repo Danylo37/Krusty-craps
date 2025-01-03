@@ -40,8 +40,8 @@ impl PacketsReceiver for ClientChen {
         // Decrease `using_times` by 1 for the corresponding route
         if let Some(routes) = self.communication.routing_table.get_mut(&destination_id) {
             if let Some(using_times) = routes.get_mut(&path_trace) {
-                if *using_times > 0 {
-                    *using_times -= 1; // Prevent underflow
+                if *using_times > 0 { // Prevent underflow
+                    *using_times -= 1;
                 }
             }
         }
