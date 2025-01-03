@@ -68,7 +68,7 @@ impl PacketCreator for ClientChen{
                                          match packet.clone().pack_type{
                                              PacketType::MsgFragment(fragment)=> fragment.fragment_index,
                                              _=> 0,
-                                         });
+                                        });
 
         ack_packet
     }

@@ -11,6 +11,7 @@ pub type Message = String;
 pub type File = String;
 pub type ServerId = NodeId;
 pub type ClientId = NodeId;
+pub type DroneId = NodeId;
 pub type SessionId = u64;
 pub type FloodId = u64;
 pub type FragmentIndex = u64;
