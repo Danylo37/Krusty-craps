@@ -184,18 +184,14 @@ pub trait Server{
                 // ... error handling logic ...
                 return;
 
-            }else if offset as u64 != fragment.fragment_index*128 {
-                //logic_error
-                //I could just insert the fragment bits inside the proper message, idk if this is too easy but it looks right, i will see after 2nd january
-            }
-                else{
-                    // Copy data to the correct offset in the vector.
-                    reassembling_message.extend_from_slice(&data_to_add);
+            }else{
+                // Copy data to the correct offset in the vector.
+                reassembling_message.splice(fragment.fragment_index*128..fragment.fragment_index*128, data_to_add);
 
-                    // Check if all fragments have been received
-                    let reassembling_message_clone = reassembling_message.clone();
-                    println!("N fragments + current fragment length{}", fragment.total_n_fragments*128 + fragment.length as u64);
-                    self.if_all_fragments_received_process(&reassembling_message_clone, &fragment, session_id, routing_header);
+                // Check if all fragments have been received
+                let reassembling_message_clone = reassembling_message.clone();
+                println!("N fragments + current fragment length{}", fragment.total_n_fragments*128 + fragment.length as u64);
+                self.if_all_fragments_received_process(&reassembling_message_clone, &fragment, session_id, routing_header);
             }
 
         }else {
@@ -206,7 +202,7 @@ pub trait Server{
                 let mut reassembling_message = Vec::with_capacity(fragment.total_n_fragments as usize * 128);
 
                 //Copying data
-                reassembling_message.extend_from_slice(&data_to_add);
+                reassembling_message.splice(fragment.fragment_index*128..fragment.fragment_index*128, data_to_add);
 
                 //Inserting message for future fragments
                 self.get_reassembling_messages()
