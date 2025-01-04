@@ -93,7 +93,7 @@ pub trait FragmentsHandler:PacketsReceiver{ //message fragments
     fn handle_fragments_in_buffer_with_checking_status<T: Serialize>(&mut self);  //when you run
 
     fn process_message<T: Serialize>(&mut self, initiator_id: NodeId, message: T);
-    fn register_client(&mut self, server_info: &mut ServerInformation, initiator_id: NodeId);
+    fn register_client(&mut self, initiator_id: NodeId);
 
     ///principal methods
     fn reassemble_fragments_in_buffer<T: Serialize + for<'de> Deserialize<'de>>(&mut self) -> T;

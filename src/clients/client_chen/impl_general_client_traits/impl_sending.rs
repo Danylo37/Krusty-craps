@@ -76,7 +76,7 @@ impl Sending for ClientChen {
     ///auxiliary methods
     ///
     fn packets_status_sending_actions(&mut self, packet: Packet, packet_status: PacketStatus) {
-        let destination = Self::get_packet_destination(packet.clone());
+        let destination = Self::get_packet_destination(&packet.clone());
 
         match packet_status {
             PacketStatus::NotSent(not_sent_type) => {
