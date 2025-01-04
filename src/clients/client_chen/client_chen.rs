@@ -2,8 +2,9 @@
 ///todo!
 /// 1) maybe do a flooding to update those things when the clients starts to run.
 /// 2) protocol communication between the client and simulation controller
-/// 4) function of updating the topology
-/// 5) testing
+/// 3) testing
+/// 4) handle the chat messages
+/// 5) web browser client traits
 /// Note: when you send the packet with routing the hop_index is increased in the receiving by a drone
 
 use crate::clients::client_chen::prelude::*;

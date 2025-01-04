@@ -25,18 +25,35 @@ impl PacketResponseHandler for ClientChen {
     }
 
     fn handle_error_in_routing(&mut self, node_id: NodeId, nack_packet: Packet, nack: Nack) {
-        info!("Drone is crashed or or sender not found {}", node_id);
-        self.update_packet_status(nack_packet.session_id-1, nack.fragment_index, PacketStatus::NotSent(NotSentType::RoutingError));
-        //if using get the mapping the destination of the packet (identified by nack_packet.session_id-1, nack.fragment_index)
-        //we have None then the current flooding isn't finished for that destination then we need to wait for the flood response
-        //to come such that the routing table is updated.
-        //otherwise if we already have we need to do a flooding to update all the routes to that node.
-        if self.communication.routing_table.get(&(self.storage.output_buffer.get(&*(nack_packet.session_id-1, nack.fragment_index)))) != None{
-            self.do_flooding();
-        } else{
-            //wait
+        // Log a warning message indicating that there's an issue with the drone or sender not found.
+        warn!("Drone is crashed or sender not found for node ID: {}", node_id);
+
+        // Update the status of the packet to reflect that it has encountered a routing error.
+        self.update_packet_status(nack_packet.session_id, nack.fragment_index, PacketStatus::NotSent(NotSentType::RoutingError));
+
+        // Attempt to retrieve the destination of the packet from the output buffer using its session ID and fragment index.
+        let packet_destination = if let Some(packet) = self.storage.output_buffer.get(&(nack_packet.session_id, nack.fragment_index)) {
+            self.get_packet_destination(packet) // Assuming the Packet struct has a 'destination' field that holds the target node ID.
+        } else {
+            // If the packet is not found, we can choose to return early or take another action.
+            // Here, we'll simply return, as we cannot determine the destination without the packet.
+            return; // Alternatively, you could panic or log an error here.
+        };
+
+        // Check whether the routing table contains a route to the packet's destination.
+        match self.communication.routing_table.get(&packet_destination) {
+            Some(routes) => {
+                // If a route exists, then the route is wrong then perform a flooding to update the routes to this node
+                if !routes.is_empty(){
+                    self.do_flooding();
+                }
+            }
+            None => {
+                // If no route to the destination exists, then the flooding is still performing, then we can just wait
+            }
         }
-        //the post-part of the handling is done in the handling flooding response
+
+        // Any post-processing will be handled when the flooding response is received.
     }
 
     fn handle_destination_is_drone(&mut self, nack_packet: Packet, nack: Nack) {

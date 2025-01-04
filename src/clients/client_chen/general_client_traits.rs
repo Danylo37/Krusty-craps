@@ -52,7 +52,7 @@ pub trait PacketCreator{
     fn create_ack_packet_from_receiving_packet(&mut self, packet: Packet) -> Packet;
 
     ///auxiliary methods
-    fn get_packet_destination(packet: Packet) -> NodeId;
+    fn get_packet_destination(&mut self, packet: Packet) -> NodeId;
     fn get_hops_from_path_trace(&mut self, path_trace: Vec<(NodeId, NodeType)>) -> Vec<NodeId>;
     fn get_source_routing_header(&mut self, destination_id: NodeId) -> Option<SourceRoutingHeader>;
     fn hops_to_path_trace(&mut self, hops: Vec<NodeId>) -> Vec<(NodeId, NodeType)>;

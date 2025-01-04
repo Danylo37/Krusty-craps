@@ -76,7 +76,7 @@ impl Sending for ClientChen {
     ///auxiliary methods
     ///
     fn packets_status_sending_actions(&mut self, packet: Packet, packet_status: PacketStatus) {
-        let destination = Self::get_packet_destination(&packet.clone());
+        let destination = self.get_packet_destination(&packet.clone());
 
         match packet_status {
             PacketStatus::NotSent(not_sent_type) => {
@@ -103,17 +103,46 @@ impl Sending for ClientChen {
     fn handle_not_sent_packet(&mut self, packet: Packet, not_sent_type: NotSentType, destination: NodeId) {
         match not_sent_type {
             NotSentType::RoutingError => {
-                if self.if_current_flood_response_from_wanted_destination_is_received(destination) {
-                    self.send(packet);
+                if let Some(routes) = self.communication.routing_table.get_mut(&destination) {
+                    if !routes.is_empty() {
+                        self.send(packet);
+                    } else {
+                        // The packet is already enqueued for later processing when routes are updated
+                    }
+                } else {
+                    // The packet is already enqueued for later processing when routes are updated
                 }
             }
             NotSentType::ToBeSent | NotSentType::Dropped => {
-                self.send(packet);
+                if let Some(routes) = self.communication.routing_table.get(&destination) {
+                    if !routes.is_empty() {
+                        self.send(packet);
+                    } else {
+                        // Log a warning since we expected to have routes but don't
+                        warn!("Attempted to send packet to {} but no routes found", destination);
+                    }
+                } else {
+                    // Log a warning since the destination is not in the routing table
+                    warn!("Destination {} not found in routing table", destination);
+                }
             }
-            _ => { //we 'll see how to handle them
+            NotSentType::BeenInWrongRecipient => {
+                //in the handle nack we send a client_event to the simulation controller that some senders are messed up
+
+                //todo()! here we just wait (let the packet be stored in the buffer) until some command from the simulation
+                //controller to send again the packet when the senders are again fixed.
+
+            }
+            NotSentType::DroneDestination => {
+                //remove the packet from the buffer, and let it drop.
+                self.storage.output_buffer.remove(&(packet.session_id, match packet.pack_type{
+                    PacketType::MsgFragment(fragment) => fragment.fragment_index,
+                    _ => 0,
+                }));
             }
         }
     }
+
     fn update_packet_status(
         &mut self,
         session_id: SessionId,
