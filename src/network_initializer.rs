@@ -1,30 +1,34 @@
-use std::collections::{HashMap, HashSet};
-
+use std::{
+    collections::{HashMap, HashSet},
+    env, fs, thread,
+};
 use crossbeam_channel::*;
-use std::{env, fs, thread};
-
+use rand::prelude::*;
 use wg_2024::{
     config::{Client, Config, Drone, Server},
-    controller::DroneEvent,
+    controller::{DroneCommand, DroneEvent},
     network::NodeId,
     packet::{NodeType, Packet},
+    drone::Drone as TraitDrone,
 };
-
+use crate::{clients::client_chen::{ClientChen, DroneBrand}, general_use::{ClientEvent, DroneId, ServerEvent, UsingTimes}, servers, servers::server::Server as ServerTrait, simulation_controller::SimulationController, ui::start_ui};
 use krusty_drone::drone::drone::KrustyCrapDrone;
-use wg_2024::drone::Drone as TraitDrone;
-
-use crate::servers;
-use crate::servers::server::Server as ServerTrait;
-
-use crate::clients::client_chen::ClientChen;
-use crate::general_use::{ClientEvent, ServerEvent};
-use crate::simulation_controller::SimulationController;
-use crate::ui::start_ui;
+use rusty_drones::RustyDrone;
+use rolling_drone::RollingDrone;
+use rustable_drone::RustableDrone;
+use rustbusters_drone::RustBustersDrone;
+use rusteze_drone::RustezeDrone;
+use fungi_drone::FungiDrone;
+use bagel_bomber::BagelBomber;
+use skylink::SkyLinkDrone;
+use RF_drone::RustAndFurious;
+use bobry_w_locie::drone::BoberDrone;
 
 pub struct NetworkInitializer {
     drone_channels: HashMap<NodeId, Sender<Packet>>,
     client_channels: HashMap<NodeId, Sender<Packet>>,
     server_channels: HashMap<NodeId, Sender<Packet>>,
+    drone_brand_usage: HashMap<DroneBrand, UsingTimes>,
 }
 
 impl NetworkInitializer {
@@ -33,9 +37,9 @@ impl NetworkInitializer {
             drone_channels: HashMap::new(),
             client_channels: HashMap::new(),
             server_channels: HashMap::new(),
+            drone_brand_usage: DroneBrand::iter().map(|brand| (brand, 0)).collect(),
         }
     }
-
     pub fn initialize_from_file(&mut self, config_path: &str) {
         // Log the current directory for debugging purposes
         println!("Current directory: {:?}", env::current_dir().expect("Failed to get current directory"));
@@ -122,30 +126,87 @@ impl NetworkInitializer {
                 .filter_map(|&node| self.get_sender_for_node(node).map(|sender| (node, sender.clone())))
                 .collect();
 
-            // Create Drone
-            let mut drone_instance = controller.create_drone::<KrustyCrapDrone>(
-                drone.id,                       // drone_id: NodeId
-                drone_events_sender_clone,      // event_sender: Sender<DroneEvent>
-                command_receiver,               // command_receiver: Receiver<Command>
-                packet_receiver,                // packet_receiver: Receiver<Packet>
-                packet_senders_collection,      // packet_senders: HashMap<NodeId, Sender<Packet>>
-                drone.pdr,                      // pdr: f64
+            // Prepare parameters array for the macro
+
+            let drone_params = (
+                drone.id,
+                drone_events_sender_clone,
+                command_receiver,
+                packet_receiver,
+                packet_senders_collection,
+                drone.pdr,
             );
 
-            // Spawn a thread for each drone
-            thread::spawn(move || {
-                match drone_instance {
-                    Ok(mut drone) => drone.run(),
-                    Err(e) => panic!("{}", e),
-                }
-            });
+            // Use helper function or macro (in this case function) to create and spawn drones based on their brand
+            match self.choose_drone_brand_evenly() {
+                DroneBrand::KrustyDrone => self.create_and_spawn_drone::<KrustyCrapDrone>(controller, drone_params),
+                DroneBrand::RustyDrone => self.create_and_spawn_drone::<RustyDrone>(controller, drone_params),
+                DroneBrand::RollingDrones => self.create_and_spawn_drone::<RollingDrone>(controller, drone_params),
+                DroneBrand::Rustable => self.create_and_spawn_drone::<RustableDrone>(controller, drone_params),
+                DroneBrand::RustBusters => self.create_and_spawn_drone::<RustBustersDrone>(controller, drone_params),
+                DroneBrand::RustEze => self.create_and_spawn_drone::<RustezeDrone>(controller, drone_params),
+                DroneBrand::Fungi => self.create_and_spawn_drone::<FungiDrone>(controller, drone_params),
+                DroneBrand::BagelBomber => self.create_and_spawn_drone::<BagelBomber>(controller, drone_params),
+                DroneBrand::SkyLink => self.create_and_spawn_drone::<SkyLinkDrone>(controller, drone_params),
+                DroneBrand::RustAndFurious => self.create_and_spawn_drone::<RustAndFurious>(controller, drone_params),
+                DroneBrand::BobryWLucie => self.create_and_spawn_drone::<BoberDrone>(controller, drone_params),
+            }
         }
     }
+    fn create_and_spawn_drone<T>(
+        &mut self,
+        controller: &mut SimulationController,
+        drone_params: (
+            DroneId,
+            Sender<DroneEvent>,
+            Receiver<DroneCommand>,
+            Receiver<Packet>,
+            HashMap<NodeId, Sender<Packet>>,
+            f32,
+        ),
+    ) where
+        T: TraitDrone + Send + 'static, // Ensure T implements the Drone trait and is Sendable
+    {
+        let (drone_id, event_sender, cmd_receiver, pkt_receiver, pkt_senders, pdr) = drone_params;
 
+        let drone_instance = controller.create_drone::<T>(
+            drone_id,
+            event_sender,
+            cmd_receiver,
+            pkt_receiver,
+            pkt_senders,
+            pdr,
+        );
 
+        thread::spawn(move || {
+            match drone_instance {
+                Ok(mut drone) => drone.run(),
+                Err(e) => panic!("Failed to run drone {}: {}", drone_id, e),
+            }
+        });
+    }
 
+    fn choose_drone_brand_evenly(&mut self) -> DroneBrand {
+        let drone_brands = DroneBrand::iter().collect::<Vec<_>>();
+
+        if let Some(&min_usage) = self.drone_brand_usage.values().min() {
+            let min_usage_drone_brands: Vec<_> = drone_brands
+                .iter()
+                .filter(|&&drone_brand| self.drone_brand_usage.get(&drone_brand) == Some(&min_usage))
+                .cloned()
+                .collect();
+
+            if let Some(&chosen_brand) = min_usage_drone_brands.choose(&mut rand::rng()) {
+                // Update usage count
+                if let Some(usage) = self.drone_brand_usage.get_mut(&chosen_brand) {
+                    *usage += 1;
+                }
+                return chosen_brand;
+            }
+        }
+        DroneBrand::KrustyDrone  //privilege our drone :)
+    }
     ///CLIENTS GENERATION
-
     fn create_clients(
         &mut self,
         clients: Vec<Client>,

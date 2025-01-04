@@ -185,7 +185,8 @@ pub struct DroneInformation{
 }
 
 
-pub enum DroneBrand{
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+pub enum DroneBrand {
     KrustyDrone,  // Our Drone
     RustyDrone,
     Rustable,
@@ -197,11 +198,28 @@ pub enum DroneBrand{
     SkyLink,
     RollingDrones,
     BobryWLucie,
-
-    //
-    Undefined,
 }
 
+impl DroneBrand {
+    // Returns an iterator over all variants of DroneBrand
+    pub fn iter() -> impl Iterator<Item = DroneBrand> {
+        [
+            DroneBrand::KrustyDrone,
+            DroneBrand::RustyDrone,
+            DroneBrand::Rustable,
+            DroneBrand::BagelBomber,
+            DroneBrand::RustAndFurious,
+            DroneBrand::Fungi,
+            DroneBrand::RustBusters,
+            DroneBrand::RustEze,
+            DroneBrand::SkyLink,
+            DroneBrand::RollingDrones,
+            DroneBrand::BobryWLucie,
+        ]
+            .into_iter()
+            .copied()
+    }
+}
 
     ///PROTOCOL NOTES:
 
