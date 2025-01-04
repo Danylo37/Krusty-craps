@@ -187,15 +187,16 @@ impl NetworkInitializer {
     }
 
     fn choose_drone_brand_evenly(&mut self) -> DroneBrand {
+        // Transform the DroneBrand enum into iterator and then collect into a vector
         let drone_brands = DroneBrand::iter().collect::<Vec<_>>();
-
+        // We retain the Brands that are least used.
         if let Some(&min_usage) = self.drone_brand_usage.values().min() {
             let min_usage_drone_brands: Vec<_> = drone_brands
                 .iter()
                 .filter(|&&drone_brand| self.drone_brand_usage.get(&drone_brand) == Some(&min_usage))
                 .cloned()
                 .collect();
-
+            // From those we choose randomly one Brand and we use it
             if let Some(&chosen_brand) = min_usage_drone_brands.choose(&mut rand::rng()) {
                 // Update usage count
                 if let Some(usage) = self.drone_brand_usage.get_mut(&chosen_brand) {
@@ -204,6 +205,7 @@ impl NetworkInitializer {
                 return chosen_brand;
             }
         }
+        // If there are no min usages then we use our Brand, but there should always be min usages
         DroneBrand::KrustyDrone  //privilege our drone :)
     }
     ///CLIENTS GENERATION

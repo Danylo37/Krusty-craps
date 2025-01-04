@@ -1,4 +1,4 @@
-use crate::clients::client_chen::{ClientChen, FragmentsHandler, PacketCreator, PacketsReceiver, Sending, ServerInformation, SpecificInfo};
+use crate::clients::client_chen::{ClientChen, FragmentsHandler, PacketCreator, PacketsReceiver, Sending, SpecificInfo};
 use crate::clients::client_chen::prelude::*;
 use crate::clients::client_chen::general_client_traits::*;
 impl FragmentsHandler for ClientChen{
