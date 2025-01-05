@@ -112,14 +112,16 @@ pub trait Server{
             }
         }
     }
-    fn send_nack(&self, p0: Nack, p1: SourceRoutingHeader, p2: u64){
-        todo!();
+    fn send_nack(&self, nack: Nack, routing_header: SourceRoutingHeader, session_id: u64){
+        let packet= Self::create_packet(PacketType::Nack(nack), routing_header, session_id);
+        self.send_packet(packet);
     }
 
     //ACK
     fn handle_ack(&mut self, _ack: Ack){
-        todo!();
+        //UI stuff i guess?
     }
+    
     fn send_ack(&self, ack: Ack, routing_header: SourceRoutingHeader, session_id: u64) {
         let packet= Self::create_packet(PacketType::Ack(ack), routing_header, session_id);
         self.send_packet(packet);
