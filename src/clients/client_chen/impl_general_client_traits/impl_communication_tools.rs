@@ -1,4 +1,4 @@
-use crate::clients::client_chen::{ClientChen, NodeInfo};
+use crate::clients::client_chen::{ClientChen};
 use crate::clients::client_chen::general_client_traits::*;
 use crate::clients::client_chen::prelude::*;
 impl CommunicationTools for ClientChen{

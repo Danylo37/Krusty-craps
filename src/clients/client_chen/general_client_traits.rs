@@ -1,6 +1,4 @@
-use std::vec;
 use crate::clients::client_chen::prelude::*;
-use crate::clients::client_chen::ServerInformation;
 
 pub trait Sending{
     fn send_packets_in_buffer_with_checking_status(&mut self);//when you run the client
@@ -58,7 +56,6 @@ pub trait PacketCreator{
     fn hops_to_path_trace(&mut self, hops: Vec<NodeId>) -> Vec<(NodeId, NodeType)>;
 }
 
-
 pub trait PacketsReceiver{
     fn handle_received_packet(&mut self, packet: Packet);
     fn decreasing_using_times_when_receiving_packet(&mut self, packet: &Packet);
@@ -113,8 +110,7 @@ pub trait ServerQuery{
     fn ask_list_files(&mut self, server_id: ServerId);  //all the files that a server has, so not a specific file_ref (or file_index)
     fn ask_file(&mut self, server_id: ServerId, file_ref: u8);
     fn ask_media(&mut self, server_id: ServerId, media_ref: String);  //string is the reference found in the files
-    ///auxiliary functions
-    //fn get_discovered_servers(&mut self) -> HashSet<ServerId>;
+
 }
 
 

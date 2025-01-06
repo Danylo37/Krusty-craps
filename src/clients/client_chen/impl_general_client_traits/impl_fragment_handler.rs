@@ -53,7 +53,7 @@ impl FragmentsHandler for ClientChen{
                         .collect::<Vec<_>>();
 
                     if let Some((_, first_packet)) = session_fragments.first() {
-                        let initiator_id = Self::get_packet_destination(first_packet);
+                        let initiator_id = self.get_packet_destination(first_packet);
 
                         if let Ok(message) = self.reassemble_fragments_in_buffer::<T>() {
                             self.process_message(initiator_id, message);

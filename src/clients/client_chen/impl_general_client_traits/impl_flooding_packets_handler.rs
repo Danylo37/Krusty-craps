@@ -1,4 +1,4 @@
-use crate::clients::client_chen::{ClientChen, ClientInformation, DroneBrand, DroneInformation, FloodingPacketsHandler, NodeInfo, Router, Sending, ServerInformation, SpecificInfo};
+use crate::clients::client_chen::{ClientChen, ClientInformation, DroneInformation, FloodingPacketsHandler, NodeInfo, Router, Sending, ServerInformation, SpecificInfo};
 use crate::clients::client_chen::prelude::*;
 use crate::clients::client_chen::general_client_traits::*;
 
@@ -75,7 +75,7 @@ impl FloodingPacketsHandler for ClientChen {
                         node_type,
                         specific_info: SpecificInfo::DroneInfo(DroneInformation {
                             connected_nodes_ids: HashSet::new(),
-                            drone_brand: DroneBrand::Undefined,
+                            //drone_brand: DroneBrand::Undefined,
                         }),
                     },
                 }

@@ -5,6 +5,7 @@
 /// 3) testing
 /// 4) handle the chat messages
 /// 5) web browser client traits
+/// 6) implement the client trait to my client: so the connected_nodes_ids are directly derived from the packet_send
 /// Note: when you send the packet with routing the hop_index is increased in the receiving by a drone
 
 use crate::clients::client_chen::prelude::*;
@@ -182,7 +183,7 @@ pub struct ServerInformation{
 
 pub struct DroneInformation{
     pub(crate) connected_nodes_ids: HashSet<NodeId>,
-    pub(crate) drone_brand: DroneBrand,
+    //pub(crate) drone_brand: DroneBrand,
 }
 
 
