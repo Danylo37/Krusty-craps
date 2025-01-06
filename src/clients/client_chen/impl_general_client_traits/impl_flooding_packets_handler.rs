@@ -104,7 +104,6 @@ impl FloodingPacketsHandler for ClientChen {
                     drone_info.connected_nodes_ids.insert(next);
                 }
             }
-
             // Update the previous node
             previous_node = Some(node_id);
         }

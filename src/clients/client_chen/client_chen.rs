@@ -13,15 +13,15 @@ use crate::clients::client_chen::{CommandHandler, FragmentsHandler, PacketsRecei
 
 pub(crate) struct ClientChen {
     // Client's metadata
-    pub(crate) metadata: ClientMetadata,
+    pub(crate) metadata: NodeMetadata,
     // Status information
-    pub(crate) status: ClientStatus,
+    pub(crate) status: NodeStatus,
     // Communication-related data
     pub(crate) communication: CommunicationInfo,
     // Communication tools
     pub(crate) communication_tools: CommunicationTools,
     // Storage for packets and messages
-    pub(crate) storage: ClientStorage,
+    pub(crate) storage: NodeStorage,
     // Information about the current network topology
     pub(crate) network_info: NetworkInfo,
 }
@@ -38,13 +38,13 @@ impl ClientChen {
     ) -> Self {
         Self {
             // Client's metadata
-            metadata: ClientMetadata {
+            metadata: NodeMetadata {
                 node_id,
                 node_type,
             },
 
             // Status
-            status: ClientStatus {
+            status: NodeStatus {
                 flood_id: 0, // Initial value to be 0 for every new client
                 session_id: (node_id as u64) << 56, // Put the id of the client in the first 8 bits
             },
@@ -66,7 +66,7 @@ impl ClientChen {
             },
 
             // Storage
-            storage: ClientStorage {
+            storage: NodeStorage {
                 irresolute_path_traces: HashSet::new(),
                 fragment_assembling_buffer: HashMap::new(),
                 output_buffer: HashMap::new(),
@@ -117,13 +117,13 @@ impl ClientChen {
 }
 
 // Metadata about the client
-pub(crate) struct ClientMetadata {
+pub(crate) struct NodeMetadata {
     pub(crate) node_id: NodeId,
     pub(crate) node_type: NodeType,
 }
 
 // Status of the client
-pub(crate) struct ClientStatus {
+pub(crate) struct NodeStatus {
     pub(crate) flood_id: FloodId,
     pub(crate) session_id: SessionId,
 }
@@ -145,7 +145,7 @@ pub(crate) struct CommunicationTools {
 }
 
 // Storage-related data
-pub struct ClientStorage {
+pub struct NodeStorage {
     pub(crate) irresolute_path_traces: HashSet<Vec<(NodeId, NodeType)>>,   //Temporary storage for the path_traces that are received but we didn't know how to process them
     pub(crate) fragment_assembling_buffer: HashMap<(SessionId, FragmentIndex), Packet>, // Temporary storage for recombining fragments
     pub(crate) output_buffer: HashMap<(SessionId, FragmentIndex), Packet>,              // Buffer for outgoing messages
@@ -216,13 +216,14 @@ impl DroneBrand {
             DroneBrand::RustEze,
             DroneBrand::SkyLink,
             DroneBrand::RollingDrones,
-            DroneBrand::BobryWLucie,
+            //DroneBrand::BobryWLucie,
         ]
             .into_iter()
             .copied()
     }
 }
 
+/*
     ///PROTOCOL NOTES:
 
     ///REMINDER:
@@ -246,5 +247,5 @@ impl DroneBrand {
     ///so when I handle the ack I can recover the fragment packet doing
     /// packet_disk(ack_packet.session_id -1, Some(ack.fragment_index))
 
-
+*/
 

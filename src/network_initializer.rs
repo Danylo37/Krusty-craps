@@ -22,7 +22,7 @@ use fungi_drone::FungiDrone;
 use bagel_bomber::BagelBomber;
 use skylink::SkyLinkDrone;
 use RF_drone::RustAndFurious;
-use bobry_w_locie::drone::BoberDrone;
+//use bobry_w_locie::drone::BoberDrone;
 
 pub struct NetworkInitializer {
     drone_channels: HashMap<NodeId, Sender<Packet>>,
@@ -149,7 +149,8 @@ impl NetworkInitializer {
                 DroneBrand::BagelBomber => self.create_and_spawn_drone::<BagelBomber>(controller, drone_params),
                 DroneBrand::SkyLink => self.create_and_spawn_drone::<SkyLinkDrone>(controller, drone_params),
                 DroneBrand::RustAndFurious => self.create_and_spawn_drone::<RustAndFurious>(controller, drone_params),
-                DroneBrand::BobryWLucie => self.create_and_spawn_drone::<BoberDrone>(controller, drone_params),
+                //DroneBrand::BobryWLucie => self.create_and_spawn_drone::<BoberDrone>(controller, drone_params),
+                _=> {}
             }
         }
     }

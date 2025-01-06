@@ -7,12 +7,14 @@ edition = "2021"
 wg_2024 = { git = "https://github.com/WGL-2024/WGL_repo_2024.git", features = ["serialize", "debug"] }
 crossbeam-channel = "0.5.13"
 toml = "0.8.19"
-rand = "0.9.0-beta.1"
+rand = "0.8.5"
 serde_json = "1.0.133"
 serde = { version = "1.0.215", features = ["derive"] }
 log = "0.4.22"
 base64 = "0.22.1"
 tokio = "1.42.0"
+eframe = "0.30.0"
+
 
 krusty_drone = { git = "https://github.com/Danylo37/krusty_drone.git"}
 rustable-drone = {git = "https://github.com/SmL-Boi/RustableDroneLib.git"}
@@ -23,7 +25,7 @@ rustbusters-drone = {git = "https://github.com/Rustbusters/drone.git"}
 rusteze_drone = {git = "https://github.com/Rusteze-AP/drone.git"}
 skylink = {git = "https://github.com/Suge42/Skylink_drone.git"}
 rolling_drone = {git = "https://github.com/giorebecchi/RollingDrone.git"}
-bobry_w_locie = {git = "https://github.com/Seregno/Public_Bry_w_locie.git"}
+#bobry_w_locie = {git = "https://github.com/Seregno/Public_Bry_w_locie.git"}
 rusty_drones = {git = "https://github.com/rusty-drone-2024/rusty-drone.git" }
 
 
