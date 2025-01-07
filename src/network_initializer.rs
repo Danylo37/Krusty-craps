@@ -150,7 +150,6 @@ impl NetworkInitializer {
                 DroneBrand::SkyLink => self.create_and_spawn_drone::<SkyLinkDrone>(controller, drone_params),
                 DroneBrand::RustAndFurious => self.create_and_spawn_drone::<RustAndFurious>(controller, drone_params),
                 //DroneBrand::BobryWLucie => self.create_and_spawn_drone::<BoberDrone>(controller, drone_params),
-                _=> {}
             }
         }
     }
@@ -198,7 +197,7 @@ impl NetworkInitializer {
                 .cloned()
                 .collect();
             // From those we choose randomly one Brand and we use it
-            if let Some(&chosen_brand) = min_usage_drone_brands.choose(&mut rand::rng()) {
+            if let Some(&chosen_brand) = min_usage_drone_brands.choose(&mut rand::thread_rng()) {
                 // Update usage count
                 if let Some(usage) = self.drone_brand_usage.get_mut(&chosen_brand) {
                     *usage += 1;

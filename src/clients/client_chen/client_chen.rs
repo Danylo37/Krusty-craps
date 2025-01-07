@@ -199,7 +199,7 @@ pub enum DroneBrand {
     RustEze,
     SkyLink,
     RollingDrones,
-    BobryWLucie,
+   // BobryWLucie,
 }
 
 impl DroneBrand {
