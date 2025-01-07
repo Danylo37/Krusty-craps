@@ -63,7 +63,7 @@ pub enum ClientCommand {
 }
 
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Debug)]
 pub enum ClientEvent {
     PacketSent(Packet),
     SenderRemoved(NodeId),
