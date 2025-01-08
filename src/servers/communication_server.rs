@@ -101,8 +101,31 @@ impl MainTrait for CommunicationServer{
 }
 
 impl CharTrait for CommunicationServer {
-    fn add_client(&mut self, nickname: String, client_id: NodeId) {
-        self.list_users.insert(nickname, client_id);
+    fn add_client(&mut self, client_id: NodeId) {
+        self.list_users.insert(client_id);
+
+        let response = Response::ClientRegistered;
+
+        //Serializing message to send
+        let response_as_string = serde_json::to_string(&response).unwrap();
+        let response_in_vec_bytes = response_as_string.as_bytes();
+        let length_response = response_in_vec_bytes.len();
+
+        //Counting fragments
+        let mut n_fragments = length_response / 128+1;
+        if n_fragments == 0 {
+            n_fragments -= 1;
+        }
+
+        //Generating header
+        let route: Vec<NodeId> = self.find_path_to(client_id); //To implement findpath
+        let header = Self::create_source_routing(route); //To fill
+
+        // Generating ids
+        let session_id = self.generate_unique_session_id();
+
+        //Send fragments
+        self.send_fragments(session_id, n_fragments,response_in_vec_bytes, header);
     }
 
     fn give_list_back(&mut self, client_id: NodeId) {
