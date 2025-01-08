@@ -1,9 +1,10 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     time::{Duration, Instant},
     fmt::Debug,
     thread,
 };
+
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use log::{info, debug, warn, error};
 use serde::Serialize;
@@ -14,47 +15,45 @@ use wg_2024::{
 };
 
 use crate::{
-    general_use::{ClientCommand, ClientEvent, Message, Query, Response, ServerType},
+    general_use::{ClientCommand, ClientEvent, Message, Query, Response, ServerError, ServerType},
     clients::client::Client
 };
-
 use super::message_fragments::MessageFragments;
 
 pub struct ChatClientDanylo {
     // ID
-    pub id: NodeId,                                             // Client ID
+    pub id: NodeId,                                         // Client ID
 
     // Channels
-    pub packet_send: HashMap<NodeId, Sender<Packet>>,           // Neighbor's packet sender channels
-    pub packet_recv: Receiver<Packet>,                          // Packet receiver channel
-    pub controller_send: Sender<ClientEvent>,                   // Event sender channel
-    pub controller_recv: Receiver<ClientCommand>,               // Command receiver channel
+    packet_send: HashMap<NodeId, Sender<Packet>>,           // Neighbor's packet sender channels
+    packet_recv: Receiver<Packet>,                          // Packet receiver channel
+    controller_send: Sender<ClientEvent>,                   // Event sender channel
+    controller_recv: Receiver<ClientCommand>,               // Command receiver channel
 
     // Servers and clients
-    pub servers: HashMap<NodeId, ServerType>,                   // IDs and types of the available servers
-    pub is_registered: HashMap<NodeId, bool>,                   // Registration status on servers
-    pub clients: Vec<NodeId>,                                   // Available clients
+    pub servers: HashMap<NodeId, ServerType>,               // IDs and types of the available servers
+    pub is_registered: HashMap<NodeId, bool>,               // Registration status on servers
+    pub clients: HashSet<NodeId>,                           // Available clients
 
     // Used IDs
-    pub session_ids: Vec<u64>,                                  // Used session IDs
-    pub flood_ids: Vec<u64>,                                    // Used flood IDs
+    session_ids: Vec<u64>,                                  // Used session IDs
+    flood_ids: Vec<u64>,                                    // Used flood IDs
 
     // Network
-    pub topology: HashMap<NodeId, HashSet<NodeId>>,             // Nodes and their neighbours
-    pub routes: HashMap<NodeId, Vec<NodeId>>,                   // Routes to the servers
+    pub topology: HashMap<NodeId, HashSet<NodeId>>,         // Nodes and their neighbours
+    routes: HashMap<NodeId, Vec<NodeId>>,                   // Routes to the servers
 
     // Message queues
-    pub messages_to_send: HashMap<u64, MessageFragments>,       // Queue of messages to be sent for different sessions
-    pub fragments_to_reassemble: HashMap<u64, Vec<Fragment>>,   // Queue of fragments to be reassembled for different sessions
+    message_to_send: Option<MessageFragments>,              // Fragments of message to be sent
+    fragments_to_reassemble: HashMap<u64, Vec<Fragment>>,   // Queue of fragments to be reassembled for different sessions
 
     // Inbox
-    pub inbox: Vec<(NodeId, Message)>,                          // Messages with their senders
-    pub new_messages: usize,                                    // Count of new messages
+    pub inbox: Vec<(NodeId, Message)>,                      // Messages with their senders
 
     // Response statuses
-    pub response_received: bool,                                // Status of the last sent query
-    pub last_response_time: Option<Instant>,                    // Time of the last response
-    pub external_error: Option<String>,                         // Error message from server/drone
+    response_received: bool,                                // Status of the last sent query
+    last_response_time: Option<Instant>,                    // Time of the last response
+    external_error: Option<String>,                         // Error message from server/drone
 }
 
 impl Client for ChatClientDanylo {
@@ -73,15 +72,14 @@ impl Client for ChatClientDanylo {
             controller_recv,
             servers: HashMap::new(),
             is_registered: HashMap::new(),
-            clients: Vec::new(),
+            clients: HashSet::new(),
             session_ids: Vec::new(),
             flood_ids: Vec::new(),
             topology: HashMap::new(),
             routes: HashMap::new(),
-            messages_to_send: HashMap::new(),
+            message_to_send: None,
             fragments_to_reassemble: HashMap::new(),
             inbox: Vec::new(),
-            new_messages: 0,
             response_received: false,
             last_response_time: None,
             external_error: None,
@@ -146,12 +144,12 @@ impl ChatClientDanylo {
     /// ###### Handles the acknowledgment (ACK) for a given session and fragment.
     /// Processes the acknowledgment for a specific fragment in a session.
     /// If there are more fragments to send, it sends the next fragment.
-    /// If all fragments are acknowledged, it removes the session from the queue.
+    /// If all fragments are acknowledged, it removes the message from message_to_send.
     fn handle_ack(&mut self, fragment_index: u64, session_id: u64) {
         debug!("Handling ACK for session {} and fragment {}", session_id, fragment_index);
 
         // Retrieve the message fragments for the given session.
-        let message = self.messages_to_send.get_mut(&session_id).unwrap();
+        let message = self.message_to_send.as_mut().unwrap();
 
         // Check if there is a next fragment to send.
         if let Some(next_fragment) = message.get_fragment_packet(fragment_index as usize) {
@@ -162,8 +160,8 @@ impl ChatClientDanylo {
                 Err(err) => error!("Failed to send next fragment for session {}: {}", session_id, err),
             }
         } else {
-            // All fragments are acknowledged; remove the session.
-            self.messages_to_send.remove(&session_id);
+            // All fragments are acknowledged; remove the message from message_to_send.
+            self.message_to_send = None;
             self.response_received = true;
             info!("All fragments acknowledged for session {}", session_id);
         }
@@ -176,20 +174,32 @@ impl ChatClientDanylo {
 
         match nack.nack_type {
             NackType::ErrorInRouting(id) => {
-                // Set an external error indicating a routing error.
+                self.update_topology_and_routes(id);
                 self.external_error = Some(format!("ErrorInRouting; drone doesn't have neighbor with id {}", id));
             }
             NackType::DestinationIsDrone => {
-                // Set an external error indicating the destination is a drone.
                 self.external_error = Some("Error: DestinationIsDrone".to_string());
             }
             NackType::UnexpectedRecipient(recipient_id) => {
-                // Set an external error indicating an unexpected recipient.
                 self.external_error = Some(format!("Error: UnexpectedRecipient (node with id {})", recipient_id));
             }
-            // Resend the last packet for the session.
             NackType::Dropped => self.resend_last_packet(session_id),
         }
+    }
+
+    /// ###### Updates the network topology and routes based on the received NACK.
+    /// Removes the node that caused the error from the topology and routes.
+    fn update_topology_and_routes(&mut self, error_node: NodeId) {
+        // Remove the node that caused the error from the topology.
+        for (_, neighbors) in self.topology.iter_mut() {
+            neighbors.remove(&error_node);
+        }
+        self.topology.remove(&error_node);
+        info!("Removed node {} from the topology", error_node);
+
+        // Remove the routes that contain the node that caused the error.
+        self.routes.retain(|_, path| !path.contains(&error_node));
+        info!("Removed node {} from the routes", error_node);
     }
 
     /// ###### Resends the last packet for a given session.
@@ -198,7 +208,7 @@ impl ChatClientDanylo {
     fn resend_last_packet(&mut self, session_id: u64) {
         debug!("Resending last packet for session {}", session_id);
 
-        let message = self.messages_to_send.get(&session_id).unwrap();
+        let message = self.message_to_send.as_ref().unwrap();
         let packet = message.get_fragment_packet(message.get_last_fragment_index()).unwrap();
         match self.send_to_next_hop(packet) {
             Ok(_) => info!("Resent last fragment for session {}", session_id),
@@ -246,11 +256,9 @@ impl ChatClientDanylo {
                     info!("New message from {}: {:?}", from, &message);
 
                     self.inbox.insert(0, (from, message));
-                    self.new_messages += 1;
                 }
                 Response::Err(error) => {
-                    error!("Error received from server {}: {}", server_id, error);
-                    self.external_error = Some(error);
+                    self.handle_response_error(server_id, error);
                 }
                 _ => {}
             }
@@ -289,15 +297,31 @@ impl ChatClientDanylo {
     fn handle_clients_list(&mut self, clients: Vec<NodeId>) {
         info!("List of clients received successfully.");
 
-        self.clients = clients;
+        self.clients = clients.into_iter().collect();
         self.response_received = true;
+    }
+
+    /// ###### Handles the response error.
+    /// Logs the error and takes appropriate action based on the error type.
+    fn handle_response_error(&mut self, server_id: NodeId, error: ServerError) {
+        error!("Error received from server {}: {:?}", server_id, error);
+
+        match error {
+            ServerError::NoSuchClient(client_id) => {
+                self.clients.remove(&client_id);
+                self.external_error = Some(format!("Error received from server {}: No client with id {}", server_id, client_id));
+            }
+            ServerError::UnexpectedError(error) => {
+                self.external_error = Some(format!("Error received from server {}: {:?}", server_id, error));
+            }
+        }
     }
 
     /// ###### Waits for a response from the server.
     /// This function waits for a response from the server within a specified timeout period.
     /// If an external error is encountered or the timeout is reached, it returns an error.
     /// Otherwise, it resets the response status and returns `Ok(())`.
-    pub fn wait_response(&mut self) -> Result<(), String> {
+    fn wait_response(&mut self) -> Result<(), String> {
         let timeout = Duration::from_secs(1);
         let start_time = Instant::now();
 
@@ -357,21 +381,27 @@ impl ChatClientDanylo {
 
     /// ###### Sends the packet to the next hop in the route.
     ///
-    /// Attempts to send the packet to the next hop in the route specified by the routing header.
-    /// It retrieves the sender for the next hop, increments the hop index, and sends the packet.
-    /// If successful, it logs the event and sends a `PacketSent` event to the simulation controller.
+    /// Attempts to send the packet to the next hop in the route.
+    /// If the packet is successfully sent, it returns `Ok(())`.
+    /// If an error occurs during the send operation, it returns an error message.
     fn send_to_next_hop(&mut self, mut packet: Packet) -> Result<(), String> {
         debug!("Sending packet to next hop: {:?}", packet);
 
+        // Attempt to retrieve the next hop ID from the routing header.
+        // If it is missing, return an error as there is no valid destination to send the packet to.
+        let Some(next_hop_id) = packet.routing_header.next_hop() else {
+            return Err("No next hop in the routing header.".to_string());
+        };
+
         // Attempt to find the sender for the next hop.
-        let Some(sender) = self.get_sender_of_next(packet.routing_header.clone()) else {
+        let Some(sender) = self.packet_send.get(&next_hop_id) else {
             return Err("No sender to the next hop.".to_string());
         };
 
-        // Increment the hop index in the routing header to reflect progress through the route.
+        // Increment the hop index in the routing header.
         packet.routing_header.increase_hop_index();
 
-        // Attempt to send the updated fragment packet to the next hop.
+        // Attempt to send the packet to the next hop.
         if sender.send(packet.clone()).is_err() {
             return Err("Error sending packet to next hop.".to_string());
         }
@@ -399,24 +429,6 @@ impl ChatClientDanylo {
         }
     }
 
-    /// ###### Retrieves the sender for the next hop in the routing header.
-    ///
-    /// This function attempts to retrieve the next hop ID from the routing header.
-    /// If the next hop ID is missing, it returns `None` as there is no valid destination to send the packet to.
-    /// It then uses the next hop ID to look up the associated sender in the `packet_send` map.
-    /// Returns a reference to the sender if it exists, or `None` if not found.
-    fn get_sender_of_next(&self, routing_header: SourceRoutingHeader) -> Option<&Sender<Packet>> {
-        // Attempt to retrieve the next hop ID from the routing header.
-        // If it is missing, return `None` as there is no valid destination to send the packet to.
-        let Some(next_hop_id) = routing_header.next_hop() else {
-            return None;
-        };
-
-        // Use the next hop ID to look up the associated sender in the `packet_send` map.
-        // Return a reference to the sender if it exists, or `None` if not found.
-        self.packet_send.get(&next_hop_id)
-    }
-
     /// ###### Handles the flood response by updating routes and topology.
     ///
     /// This function processes the received `FloodResponse` by updating the routes and servers
@@ -442,8 +454,10 @@ impl ChatClientDanylo {
                 .get(id)
                 .map_or(true, |prev_path| prev_path.len() > path.len())
             {
-                // Add the server to the servers list with an undefined type.
-                self.servers.insert(*id, ServerType::Undefined);
+                // Add the server to the servers list with an undefined type if it is not already present.
+                if !self.servers.contains_key(id) {
+                    self.servers.insert(*id, ServerType::Undefined);
+                }
 
                 // Update the routing table with the new, shorter path.
                 self.routes.insert(
@@ -481,10 +495,8 @@ impl ChatClientDanylo {
     pub fn discovery(&mut self) -> Result<(), String> {
         info!("Starting discovery process");
 
-        // Clear all current data structures related to clients, routes, servers, and topology.
-        self.clients.clear();
+        // Clear all current data structures related to topology.
         self.routes.clear();
-        self.servers.clear();
         self.topology.clear();
 
         // Generate a new flood ID, incrementing the last one or starting at 1 if none exists.
@@ -515,19 +527,23 @@ impl ChatClientDanylo {
                 error!("Failed to send FloodRequest to the drone with id {}.", sender.0);
                 return Err(format!("Failed to send FloodRequest to the drone with id {}.", sender.0));
             }
-        }
 
-        // Send the 'PacketSent' event to the simulation controller
-        self.send_event(ClientEvent::PacketSent(packet));
+            // Send the 'PacketSent' event to the simulation controller
+            self.send_event(ClientEvent::PacketSent(packet.clone()));
+        }
 
         // Wait for the discovery process to complete.
         self.last_response_time = Some(Instant::now());
-        self.wait_discovery_end(Duration::from_secs(1))
+        let result = self.wait_discovery_end(Duration::from_secs(1));
+
+        self.update_servers();
+
+        result
     }
 
     /// ###### Waits for the discovery process to complete within a specified timeout period.
     /// Returns an error if the timeout is reached.
-    pub fn wait_discovery_end(&mut self, timeout: Duration) -> Result<(), String> {
+    fn wait_discovery_end(&mut self, timeout: Duration) -> Result<(), String> {
         while let Some(last_response) = self.last_response_time {
             if Instant::now().duration_since(last_response) > timeout {
                 info!("Discovery complete!");
@@ -536,6 +552,20 @@ impl ChatClientDanylo {
             thread::sleep(Duration::from_millis(100));
         }
         Err("Discovery failed.".to_string())
+    }
+
+    /// ###### Updates the list of servers based on the current topology.
+    /// Removes servers that are not present in the topology.
+    fn update_servers(&mut self) {
+        let servers_to_remove: Vec<NodeId> = self.servers.keys()
+            .filter(|&server| !self.topology.contains_key(server))
+            .cloned()
+            .collect();
+
+        for server in servers_to_remove {
+            self.servers.remove(&server);
+        }
+        info!("Updated list of servers: {:?}", self.servers);
     }
 
     /// ###### Requests the type of specified server.
@@ -636,6 +666,45 @@ impl ChatClientDanylo {
         }
     }
 
+    /// ###### Finds a route from the current node to the specified server using breadth-first search.
+    ///
+    /// This method explores the network topology starting from the current node, and returns the shortest path
+    /// (in terms of hops) to the specified server if one exists. It uses a queue to explore nodes level by level,
+    /// ensuring that the first valid path found is the shortest. If no path is found, it returns `None`.
+    fn find_route_to(&self, server_id: NodeId) -> Option<Vec<NodeId>> {
+        // Initialize a queue for breadth-first search and a set to track visited nodes.
+        let mut queue: VecDeque<(NodeId, Vec<NodeId>)> = VecDeque::new();
+        let mut visited: HashSet<NodeId> = HashSet::new();
+
+        // Start from the current node with an initial path containing just the current node.
+        queue.push_back((self.id, vec![self.id]));
+
+        // Perform breadth-first search.
+        while let Some((current, path)) = queue.pop_front() {
+            // If the destination node is reached, return the path.
+            if current == server_id {
+                return Some(path);
+            }
+
+            // Mark the current node as visited.
+            visited.insert(current);
+
+            // Explore the neighbors of the current node.
+            if let Some(neighbors) = self.topology.get(&current) {
+                for &neighbor in neighbors {
+                    // Only visit unvisited neighbors.
+                    if !visited.contains(&neighbor) {
+                        let mut new_path = path.clone();
+                        new_path.push(neighbor); // Extend the path to include the neighbor.
+                        queue.push_back((neighbor, new_path)); // Add the neighbor to the queue.
+                    }
+                }
+            }
+        }
+        None    // Return None if no path to the server is found.
+    }
+
+
     /// ###### Reassembles the fragments for a given session into a complete message.
     /// Returns the reassembled message or an error if reassembly fails.
     fn reassemble(&mut self, session_id: u64) -> Option<Response> {
@@ -704,13 +773,18 @@ impl ChatClientDanylo {
     /// ###### Sends an event to the simulation controller.
     /// Logs the success or failure of the send operation.
     fn send_event(&self, event: ClientEvent) {
-        match event {
-            ClientEvent::PacketSent(packet) => {
-                match self.controller_send.send(ClientEvent::PacketSent(packet)) {
-                    Ok(_) => info!("Sent 'PacketSent' event to controller"),
-                    Err(_) => error!("Error sending 'PacketSent' event to controller"),
-                }
-            }
+        let result = self.controller_send.send(event.clone());
+        let event_name = match event {
+            ClientEvent::PacketSent(_) => "PacketSent",
+            ClientEvent::SenderRemoved(_) => "SenderRemoved",
+            ClientEvent::SenderAdded(_) => "SenderAdded",
+            ClientEvent::DoingFlood(_) => "DoingFlood",
+            ClientEvent::FloodIsFinished(_) => "FloodIsFinished",
+        };
+
+        match result {
+            Ok(_) => info!("Sent '{}' event to controller", event_name),
+            Err(_) => error!("Error sending '{}' event to controller", event_name),
         }
     }
 }
