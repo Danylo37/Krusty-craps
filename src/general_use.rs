@@ -19,7 +19,6 @@ pub type UsingTimes = u64;  //to measure traffic of fragments in a path.
 
 ///packet sending status
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "debug", derive(PartialEq))]
 pub enum NotSentType{
     ToBeSent,
     Dropped,
@@ -29,14 +28,12 @@ pub enum NotSentType{
 }
 
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "debug", derive(PartialEq))]
 pub enum Speaker{
     Me,
     HimOrHer,
 }
 
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "debug", derive(PartialEq))]
 pub enum PacketStatus{
     Sent,                   //Successfully sent packet, that is with ack received
     NotSent(NotSentType),   //Include the packet not successfully sent, that is nack received
