@@ -101,6 +101,7 @@ impl MainTrait for CommunicationServer{
     fn get_packet_send_not_mutable(&self) -> &HashMap<NodeId, Sender<Packet>>{ &self.packet_send }
     fn get_reassembling_messages(&mut self) -> &mut HashMap<u64, Vec<u8>>{ &mut self.reassembling_messages }
     fn get_sending_messages(&mut self) ->  &mut HashMap<u64, (Vec<u8>, u8)>{ &mut self.sending_messages }
+    fn get_sending_messages_not_mutable(&self) -> &HashMap<u64, (Vec<u8>, u8)>{ &self.sending_messages }
 
 
     fn process_reassembled_message(&mut self, data: Vec<u8>, src_id: NodeId){
@@ -184,7 +185,7 @@ impl CharTrait for CommunicationServer {
     fn forward_message_to(&mut self, destination_id: NodeId, message: Message) {
 
         //Creating data to send
-        let response = Response::MessageFrom(destination_id,message);
+        let response = Response::MessageFrom(destination_id, message);
 
         //Serializing message to send
         let response_as_string = serde_json::to_string(&response).unwrap();
@@ -198,7 +199,7 @@ impl CharTrait for CommunicationServer {
         }
 
         //Generating header
-        let route: Vec<NodeId> = self.find_path_to(*self.list_users.get(&destination_id).unwrap());
+        let route: Vec<NodeId> = self.find_path_to(destination_id);
         let header = Self::create_source_routing(route);
 
         // Generating fragment
