@@ -90,23 +90,18 @@ pub trait Server{
     //NACK
     fn handle_nack(&mut self, nack: Nack, session_id: u64){
         match nack.nack_type {
-            NackType::UnexpectedRecipient(node_id) => { //What is actually unexpected recipient? Can it even happen?
-                println!("Unexpected Recipient at node {}", node_id);
+            NackType::UnexpectedRecipient(node_id) => {
                 self.discover();
                 self.send_again_fragment(session_id, nack.fragment_index);
             },
             NackType::Dropped => {
-                println!("Dropped");
-                self.discover();
                 self.send_again_fragment(session_id, nack.fragment_index);
             },
             NackType::DestinationIsDrone => {
-                println!("Destination is drone?");
                 self.discover();
                 self.send_again_fragment(session_id, nack.fragment_index);
             },
             NackType::ErrorInRouting(node_id) => {
-                println!("Error in routing in node: {}", node_id);
                 self.discover();
                 self.send_again_fragment(session_id, nack.fragment_index);
             }
@@ -307,6 +302,7 @@ pub trait Server{
         self.send_packet(packet);
 
     }
+    
     //Common functions
     fn give_type_back(&mut self, src_id: NodeId){
         println!("We did it");
