@@ -12,7 +12,7 @@ use wg_2024::{
     drone::Drone as TraitDrone,
 };
 use crate::{clients::client_chen::{ClientChen, DroneBrand}, general_use::{ClientEvent, DroneId, ServerEvent, UsingTimes}, servers, servers::server::Server as ServerTrait, simulation_controller::SimulationController, ui::start_ui};
-use krusty_drone::drone::drone::KrustyCrapDrone;
+use krusty_drone::KrustyCrapDrone;
 use rusty_drones::RustyDrone;
 use rolling_drone::RollingDrone;
 use rustable_drone::RustableDrone;
