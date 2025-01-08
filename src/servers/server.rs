@@ -2,8 +2,6 @@
 
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::{HashMap};
-use std::time::Instant;
-use log::{debug, error, info};
 use wg_2024::{
     network::{NodeId, SourceRoutingHeader},
     packet::{
@@ -33,6 +31,8 @@ pub trait Server{
 
     fn get_reassembling_messages(&mut self) -> &mut HashMap<u64, Vec<u8>>;
     fn get_sending_messages(&mut self) -> &mut HashMap<u64, (Vec<u8>, u8)>;
+    fn get_sending_messages_not_mutable(&self) -> &HashMap<u64, (Vec<u8>, u8)>;
+
 
     fn run(&mut self){
         loop {
@@ -100,14 +100,12 @@ pub trait Server{
 
     fn handle_flood_request(&mut self, mut flood_request: FloodRequest, session_id: u64) {
 
+        //Inserting self in flood request
         flood_request.increment(self.get_id(), NodeType::Server);
-        let response = flood_request.generate_response(session_id);
 
-        // Send response
-        match self.send_to_next_hop(response) {
-            Ok(_) => info!("FloodResponse sent successfully."),
-            Err(err) => error!("Error sending FloodResponse: {}", err),
-        }
+        //Creating and sending flood response
+        let response = flood_request.generate_response(session_id);
+        self.send_packet(response);
     }
 
     fn handle_flood_response(&mut self, flood_response: FloodResponse) {
@@ -297,7 +295,7 @@ pub trait Server{
     fn send_again_fragment(&mut self, session_id: u64, fragment_index: u64){
 
         //Getting right message and destination id
-        let message_and_destination = self.get_sending_messages().get(&session_id).unwrap();
+        let message_and_destination = self.get_sending_messages_not_mutable().get(&session_id).unwrap();
 
         //Preparing fields for Fragment
         let length_response = message_and_destination.0.len();
@@ -313,7 +311,6 @@ pub trait Server{
         }else{
             data.copy_from_slice(&message_and_destination.0[offset as usize..(offset+128) as usize]);
         }
-
 
         //Generating fragment
         let fragment = Fragment::new(
