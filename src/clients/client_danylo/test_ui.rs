@@ -10,7 +10,7 @@ use crate::{
 
 use super::{
     client_danylo::ChatClientDanylo,
-    ui::run_chat_client_ui
+    ui::ChatClientUI,
 };
 
 pub fn test_ui() {
@@ -28,13 +28,15 @@ pub fn test_ui() {
     c1.servers.insert(7, ServerType::Text);
     c1.servers.insert(8, ServerType::Undefined);
 
-    c1.clients.push(9);
-    c1.clients.push(10);
-    c1.clients.push(11);
+    c1.clients.insert(9);
+    c1.clients.insert(10);
+    c1.clients.insert(11);
 
-    c1.new_messages = 2;
+    c1.inbox.push((9, "Hello".to_string()));
+    c1.inbox.push((11, "What is your name?".to_string()));
 
-    run_chat_client_ui(c1);
+    let mut ui = ChatClientUI::new(c1);
+    ui.run();
 }
 
 pub fn create_test_chat_client(id: NodeId) -> ChatClientDanylo {
