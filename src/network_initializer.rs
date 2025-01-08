@@ -16,7 +16,7 @@ use krusty_drone::drone::drone::KrustyCrapDrone;
 use rusty_drones::RustyDrone;
 use rolling_drone::RollingDrone;
 use rustable_drone::RustableDrone;
-use drone::RustBustersDrone;
+use rustbusters_drone::RustBustersDrone;
 use rusteze_drone::RustezeDrone;
 use fungi_drone::FungiDrone;
 use bagel_bomber::BagelBomber;
