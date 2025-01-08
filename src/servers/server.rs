@@ -8,14 +8,21 @@ use wg_2024::{
         Ack, FloodRequest, FloodResponse, Fragment, Nack, NackType, NodeType, Packet, PacketType,
     },
 };
-use crate::general_use::{Message, ServerCommand, ServerType};
+use crate::general_use::{FloodId, Message, ServerCommand, ServerType};
+
 
 ///SERVER TRAIT
 pub trait Server{
     fn get_id(&self) -> NodeId;
     fn get_server_type(&self) -> ServerType;
-    fn get_flood_id(&mut self) -> u64;
+
     fn get_session_id(&mut self) -> u64;
+    fn get_flood_id(&mut self) -> u64;
+
+    fn push_flood_id(&mut self, flood_id: FloodId);
+    fn get_clients(&mut self) -> &mut Vec<NodeId>;
+    fn get_topology(&mut self) -> &mut HashMap<NodeId, Vec<NodeId>>;
+    fn get_routes(&mut self) -> &mut HashMap<NodeId, Vec<NodeId>>;
 
     fn get_from_controller_command(&mut self) -> &mut Receiver<ServerCommand>;
     fn get_packet_recv(&mut self) -> &mut Receiver<Packet>;
@@ -24,6 +31,8 @@ pub trait Server{
 
     fn get_reassembling_messages(&mut self) -> &mut HashMap<u64, Vec<u8>>;
     fn get_sending_messages(&mut self) -> &mut HashMap<u64, (Vec<u8>, u8)>;
+    fn get_sending_messages_not_mutable(&self) -> &HashMap<u64, (Vec<u8>, u8)>;
+
 
     fn run(&mut self){
         loop {
@@ -48,7 +57,7 @@ pub trait Server{
                             PacketType::Ack(ack) => self.handle_ack(ack),
                             PacketType::MsgFragment(fragment) => self.handle_fragment(fragment, packet.routing_header ,packet.session_id),
                             PacketType::FloodRequest(flood_request) => self.handle_flood_request(flood_request, packet.session_id),
-                            PacketType::FloodResponse(flood_response) => self.handle_flood_response(flood_response, packet.session_id),
+                            PacketType::FloodResponse(flood_response) => self.handle_flood_response(flood_response),
                         }
                     }
                 },
@@ -58,39 +67,55 @@ pub trait Server{
 
     //FLOOD
     fn discover(&mut self) {
+
+        self.get_clients().clear();
+        self.get_routes().clear();
+        self.get_topology().clear();
+
+        let flood_id = self.get_flood_id();
+        self.push_flood_id(flood_id);
+
+        // Create a new flood request initialized with the generated flood ID, the current node's ID, and its type.
         let flood_request = FloodRequest::initialize(
-            self.generate_unique_flood_id(), // Replace with your ID generation
+            flood_id,
             self.get_id(),
-            NodeType::Server,
+            NodeType::Client,
         );
 
+        // Generate a new session ID, incrementing the last one or starting at 1 if none exists.
+        let session_id = self.get_session_id();
+
+        // Create a new packet with the flood request and session ID.
         let packet = Packet::new_flood_request(
             SourceRoutingHeader::empty_route(),
-            self.generate_unique_session_id(),
-            flood_request.clone(),
+            session_id,
+            flood_request,
         );
 
-        for sender in self.get_packet_send().values() {
-            if let Err(e) = sender.send(packet.clone()) {
-                eprintln!("Failed to send FloodRequest: {:?}", e);
-            }
+        // Attempt to send the flood request to all neighbors.
+        for (_, sender_channel) in self.get_packet_send_not_mutable() {
+            sender_channel.send(packet.clone()).expect("This error message shouldn't come out, (flooding error from server)");
         }
     }
 
-    fn handle_flood_request(&mut self, flood_request: FloodRequest, session_id: u64){
-        todo!();
+    fn handle_flood_request(&mut self, mut flood_request: FloodRequest, session_id: u64) {
+
+        //Inserting self in flood request
+        flood_request.increment(self.get_id(), NodeType::Server);
+
+        //Creating and sending flood response
+        let response = flood_request.generate_response(session_id);
+        self.send_packet(response);
     }
-    fn handle_flood_response(&self, flood_response: FloodResponse, session_id: u64){
-        todo!();
-    }
-    fn send_flood_response(){
-        todo!();
+
+    fn handle_flood_response(&mut self, flood_response: FloodResponse) {
+        println!("{:?}",flood_response);
     }
 
     //NACK
     fn handle_nack(&mut self, nack: Nack, session_id: u64){
         match nack.nack_type {
-            NackType::UnexpectedRecipient(node_id) => {
+            NackType::UnexpectedRecipient(_) => {
                 self.discover();
                 self.send_again_fragment(session_id, nack.fragment_index);
             },
@@ -101,7 +126,7 @@ pub trait Server{
                 self.discover();
                 self.send_again_fragment(session_id, nack.fragment_index);
             },
-            NackType::ErrorInRouting(node_id) => {
+            NackType::ErrorInRouting(_) => {
                 self.discover();
                 self.send_again_fragment(session_id, nack.fragment_index);
             }
@@ -139,7 +164,7 @@ pub trait Server{
         first_carrier.send(packet).unwrap();
     }
 
-    fn find_path_to(&self, destination_id: NodeId) -> Vec<NodeId>{
+    fn find_path_to(&self, _destination_id: NodeId) -> Vec<NodeId>{
         vec![4,2,1,3]
     }
 
@@ -183,7 +208,7 @@ pub trait Server{
 
             }else{
                 // Copy data to the correct offset in the vector.
-                reassembling_message.splice(fragment.fragment_index*128..fragment.fragment_index*128, data_to_add);
+                reassembling_message.splice(((fragment.fragment_index*128) as usize)..((fragment.fragment_index*128) as usize), data_to_add);
 
                 // Check if all fragments have been received
                 let reassembling_message_clone = reassembling_message.clone();
@@ -199,7 +224,7 @@ pub trait Server{
                 let mut reassembling_message = Vec::with_capacity(fragment.total_n_fragments as usize * 128);
 
                 //Copying data
-                reassembling_message.splice(fragment.fragment_index*128..fragment.fragment_index*128, data_to_add);
+                reassembling_message.splice(((fragment.fragment_index*128) as usize)..((fragment.fragment_index*128) as usize), data_to_add);
 
                 //Inserting message for future fragments
                 self.get_reassembling_messages()
@@ -229,9 +254,15 @@ pub trait Server{
         }
         false
     }
+
     fn process_reassembled_message(&mut self, data: Vec<u8>, src_id: NodeId);
+
     fn send_fragments(&mut self, session_id: u64, n_fragments: usize, response_in_vec_bytes: &[u8], header: SourceRoutingHeader) {
+
+        //Storing the all the fragments to send
         self.get_sending_messages().insert(session_id, (response_in_vec_bytes.to_vec(), header.destination().unwrap()));
+
+        //Sending
         for i in 0..n_fragments{
 
             //Preparing data of fragment
@@ -264,7 +295,7 @@ pub trait Server{
     fn send_again_fragment(&mut self, session_id: u64, fragment_index: u64){
 
         //Getting right message and destination id
-        let message_and_destination = self.get_sending_messages().get(&session_id).unwrap();
+        let message_and_destination = self.get_sending_messages_not_mutable().get(&session_id).unwrap();
 
         //Preparing fields for Fragment
         let length_response = message_and_destination.0.len();
@@ -280,7 +311,6 @@ pub trait Server{
         }else{
             data.copy_from_slice(&message_and_destination.0[offset as usize..(offset+128) as usize]);
         }
-
 
         //Generating fragment
         let fragment = Fragment::new(
@@ -354,9 +384,9 @@ pub trait Server{
 
 ///Communication Server functions
 pub trait CommunicationServer {
-    fn add_client(&mut self, nickname: String, client_id: NodeId);
+    fn add_client(&mut self, client_id: NodeId);
     fn give_list_back(&mut self, client_id: NodeId);
-    fn forward_message_to(&mut self, nickname: String, message: Message);
+    fn forward_message_to(&mut self, destination_id: NodeId, message: Message);
 }
 
 ///Content Server functions
