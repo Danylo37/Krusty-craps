@@ -12,7 +12,7 @@ E forse del mio dir poco ti cale."#,
 
     "Una banana #Media[banana]",
 
-    "Non scegliere questo testo #Media[do_not_search_this_media]",
+    "Non scegliere questo testo #Media[do_not_search_this]",
 
     r#"Phrases by Lillo:
 - a lack of belief in free will is the antidote to hate and judgement
