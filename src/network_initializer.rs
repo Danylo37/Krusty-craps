@@ -11,7 +11,7 @@ use wg_2024::{
     packet::{NodeType, Packet},
     drone::Drone as TraitDrone,
 };
-use crate::{clients::client_chen::{ClientChen, DroneBrand}, general_use::{ClientEvent, DroneId, ServerEvent, UsingTimes}, servers, servers::server::Server as ServerTrait, simulation_controller::SimulationController, ui::start_ui};
+use crate::{{clients, clients::client::Client as trait_client}, general_use::{ClientEvent, DroneId, ServerEvent, UsingTimes}, servers, servers::server::Server as ServerTrait, simulation_controller::SimulationController, ui::start_ui};
 use krusty_drone::KrustyCrapDrone;
 use rusty_drones::RustyDrone;
 use rolling_drone::RollingDrone;
@@ -23,6 +23,41 @@ use bagel_bomber::BagelBomber;
 use skylink::SkyLinkDrone;
 use RF_drone::RustAndFurious;
 //use bobry_w_locie::drone::BoberDrone;
+
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+pub enum DroneBrand {
+    KrustyDrone,  // Our Drone
+    RustyDrone,
+    Rustable,
+    BagelBomber,
+    RustAndFurious,
+    Fungi,
+    RustBusters,
+    RustEze,
+    SkyLink,
+    RollingDrones,
+    // BobryWLucie,
+}
+
+impl DroneBrand {
+    // Returns an iterator over all variants of DroneBrand
+    pub fn iter() -> impl Iterator<Item = DroneBrand> {
+        [
+            DroneBrand::KrustyDrone,
+            DroneBrand::RustyDrone,
+            DroneBrand::Rustable,
+            DroneBrand::BagelBomber,
+            DroneBrand::RustAndFurious,
+            DroneBrand::Fungi,
+            DroneBrand::RustBusters,
+            DroneBrand::RustEze,
+            DroneBrand::SkyLink,
+            DroneBrand::RollingDrones,
+            //DroneBrand::BobryWLucie,
+        ]
+            .into_iter()
+    }
+}
 
 pub struct NetworkInitializer {
     drone_channels: HashMap<NodeId, Sender<Packet>>,
@@ -242,10 +277,8 @@ impl NetworkInitializer {
                 .collect();
 
             // Initialize client
-            let mut client_instance = ClientChen::new(
+            let mut client_instance = clients::client_danylo::client_danylo::ChatClientDanylo::new(
                 client.id,                       // node_id: NodeId
-                NodeType::Client,                // node_type: NodeType
-                connected_nodes_ids_set.clone(), // connected_nodes_ids: HashSet<NodeId>
                 packet_senders_collection,       // pack_send: HashMap<NodeId, Sender<Packet>>
                 packet_receiver,                 // pack_recv: Receiver<Packet>
                 client_events_sender_clone,      // controller_send: Sender<ClientEvent>
