@@ -8,7 +8,6 @@ use wg_2024::{
     },
 };
 use crate::general_use::{Query, Response, ServerCommand, ServerEvent, ServerType};
-use crate::general_use::ServerError::UnexpectedError;
 use super::server::MediaServer as CharTrait;
 use super::server::Server as MainTrait;
 
@@ -157,7 +156,7 @@ impl CharTrait for MediaServer{
         if let Some(media) = media {
             response = Response::Media(media.clone());
         }else{
-            response = Response::Err(UnexpectedError("Media not found".to_string()));
+            response = Response::Err("Media not found".to_string());
         }
 
         //Serializing message to send

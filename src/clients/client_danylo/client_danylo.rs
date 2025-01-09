@@ -15,7 +15,7 @@ use wg_2024::{
 };
 
 use crate::{
-    general_use::{ClientCommand, ClientEvent, Message, Query, Response, ServerError, ServerType},
+    general_use::{ClientCommand, ClientEvent, Message, Query, Response, ServerType},
     clients::client::Client
 };
 use super::message_fragments::MessageFragments;
@@ -327,18 +327,10 @@ impl ChatClientDanylo {
 
     /// ###### Handles the response error.
     /// Logs the error and takes appropriate action based on the error type.
-    fn handle_response_error(&mut self, server_id: NodeId, error: ServerError) {
+    fn handle_response_error(&mut self, server_id: NodeId, error: String) {
         error!("Error received from server {}: {:?}", server_id, error);
 
-        match error {
-            ServerError::NoSuchClient(client_id) => {
-                self.clients.remove(&client_id);
-                self.external_error = Some(format!("Error received from server {}: No client with id {}", server_id, client_id));
-            }
-            ServerError::UnexpectedError(error) => {
-                self.external_error = Some(format!("Error received from server {}: {:?}", server_id, error));
-            }
-        }
+        self.external_error = Some(format!("Error received from server {}: {:?}", server_id, error));
     }
 
     /// ###### Waits for a response from the server.

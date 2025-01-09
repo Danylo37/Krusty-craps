@@ -110,23 +110,7 @@ pub enum Response {
     Media(String),
 
     //General Error
-    Err(ServerError)
-}
-
-// Errors (Server -> Client)
-#[derive(Deserialize, Serialize, Debug)]
-pub enum ServerError {
-    //From Communication Server
-    NoSuchClient(NodeId),
-
-    //From Content Server
-    //(Text)
-    // todo
-    //(Media)
-    // todo
-
-    // General Error
-    UnexpectedError(String),
+    Err(String)
 }
 
 ///Material
