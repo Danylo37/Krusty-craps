@@ -21,7 +21,6 @@ pub struct TextServer{
 
     //Basic data
     pub id: NodeId,
-    pub connected_drone_ids: Vec<NodeId>,
 
     //Fragment-related
     pub reassembling_messages: HashMap<SessionId, Vec<u8>>,
@@ -47,17 +46,14 @@ pub struct TextServer{
 impl TextServer{
     pub fn new(
         id: NodeId,
-        connected_drone_ids: Vec<NodeId>,
+        content: Vec<String>,
         to_controller_event: Sender<ServerEvent>,
         from_controller_command: Receiver<ServerCommand>,
         packet_recv: Receiver<Packet>,
         packet_send: HashMap<NodeId, Sender<Packet>>,
     ) -> Self {
-        let content = Self::prepare_content();
-
         TextServer {
             id,
-            connected_drone_ids,
 
             reassembling_messages: Default::default(),
             sending_messages: Default::default(),
@@ -75,28 +71,6 @@ impl TextServer{
 
             content,
         }
-    }
-    fn prepare_content() -> Vec<String>{
-        let mut content = TEXT.to_vec();
-
-        let len = content.len();
-        if len == 0 {
-            return Vec::new();
-        }else if len < 4 {
-            // If the Vec has less than 4 elements, remove one element if possible
-            content.pop();
-            return content.into_iter().map(|value| value.to_string()).collect::<Vec<String>>();
-        }
-
-        // Calculate the step size for removing elements
-        let step = len / 4;
-
-        // Retain only the elements that aren't in the removal step
-        content.into_iter()
-            .enumerate()
-            .filter(|(index, _)| (index + 1) % step != 0)
-            .map(|(_, value)| value.to_string())
-            .collect::<Vec<String>>()
     }
 }
 
