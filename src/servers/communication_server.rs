@@ -21,7 +21,6 @@ pub struct CommunicationServer{
 
     //Basic data
     pub id: NodeId,
-    pub connected_drone_ids: Vec<NodeId>,
 
     //Fragment-related
     pub reassembling_messages: HashMap<SessionId, Vec<u8>>,
@@ -47,7 +46,6 @@ pub struct CommunicationServer{
 impl CommunicationServer{
     pub fn new(
         id: NodeId,
-        connected_drone_ids: Vec<NodeId>,
         to_controller_event: Sender<ServerEvent>,
         from_controller_command: Receiver<ServerCommand>,
         packet_recv: Receiver<Packet>,
@@ -55,7 +53,6 @@ impl CommunicationServer{
     ) -> Self {
         CommunicationServer {
             id,
-            connected_drone_ids,
 
             reassembling_messages: Default::default(),
             sending_messages: Default::default(),
