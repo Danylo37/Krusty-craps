@@ -4,15 +4,15 @@ use crate::general_use::ServerType;
 use super::client_danylo::ChatClientDanylo;
 
 
-pub struct ChatClientUI {
-    client: ChatClientDanylo,
+pub struct ChatClientUI<'a> {
+    client: &'a mut ChatClientDanylo,
     current_server: NodeId,
     separator: String
 }
 
-impl ChatClientUI {
+impl<'a> ChatClientUI<'a> {
     /// ###### Creates a new `ChatClientUI` instance with the given client.
-    pub fn new(client: ChatClientDanylo) -> Self {
+    pub fn new(client: &'a mut ChatClientDanylo) -> Self {
         Self {
             client,
             current_server: 0,

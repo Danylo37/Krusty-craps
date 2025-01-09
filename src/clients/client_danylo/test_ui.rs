@@ -35,7 +35,7 @@ pub fn test_ui() {
     c1.inbox.push((9, "Hello".to_string()));
     c1.inbox.push((11, "What is your name?".to_string()));
 
-    let mut ui = ChatClientUI::new(c1);
+    let mut ui = ChatClientUI::new(&mut c1);
     ui.run();
 }
 

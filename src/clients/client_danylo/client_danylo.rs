@@ -16,7 +16,10 @@ use wg_2024::{
 
 use crate::{
     general_use::{ClientCommand, ClientEvent, Message, Query, Response, ServerType},
-    clients::client::Client
+    clients::{
+        client::Client,
+        client_danylo::ui::ChatClientUI,
+    },
 };
 use super::message_fragments::MessageFragments;
 
@@ -137,6 +140,10 @@ impl ChatClientDanylo {
             ClientCommand::RemoveSender(id) => {
                 self.packet_send.remove(&id);
                 info!("Removed sender for node {}", id);
+            }
+            ClientCommand::RunUI => {
+                info!("Running UI");
+                ChatClientUI::new(self).run();
             }
             // -------------- for tests -------------- \\
             ClientCommand::StartFlooding => {
@@ -792,10 +799,10 @@ impl ChatClientDanylo {
         let result = self.controller_send.send(event.clone());
         let event_name = match event {
             ClientEvent::PacketSent(_) => "PacketSent",
-            ClientEvent::SenderRemoved(_) => "SenderRemoved",
-            ClientEvent::SenderAdded(_) => "SenderAdded",
-            ClientEvent::DoingFlood(_) => "DoingFlood",
-            ClientEvent::FloodIsFinished(_) => "FloodIsFinished",
+            ClientEvent::SenderRemoved(_) => "SenderRemoved",       // todo send event
+            ClientEvent::SenderAdded(_) => "SenderAdded",           // todo send event
+            ClientEvent::DoingFlood(_) => "DoingFlood",             // todo send event
+            ClientEvent::FloodIsFinished(_) => "FloodIsFinished",   // todo send event
         };
 
         match result {

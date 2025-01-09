@@ -57,6 +57,7 @@ pub enum ClientCommand {
     //Controller functions
     RemoveSender(NodeId),
     AddSender(NodeId, Sender<Packet>),
+    RunUI,
     StartFlooding,
     AskTypeTo(ServerId),
 }
