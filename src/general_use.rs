@@ -117,7 +117,7 @@ pub enum Response {
 }
 
 ///Material
-#[derive(Deserialize, Serialize, Copy, Clone, Debug, PartialEq)]
+#[derive(Deserialize, Serialize, Copy, Clone, Debug, PartialEq, Hash, Eq)]
 pub enum ServerType {
     Communication,
     Text,
@@ -137,7 +137,7 @@ impl Display for ServerType {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Hash)]
 pub enum ClientType {
     Chat,
     Web,
