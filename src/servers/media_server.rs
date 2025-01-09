@@ -20,7 +20,6 @@ pub struct MediaServer{
 
     //Basic data
     pub id: NodeId,
-    pub connected_drone_ids: Vec<NodeId>,
 
     //Fragment-related
     pub reassembling_messages: HashMap<SessionId, Vec<u8>>,
@@ -43,19 +42,17 @@ pub struct MediaServer{
     pub media: HashMap<String, String>,
 }
 
-impl MediaServer{
+impl MediaServer {
     pub fn new(
         id: NodeId,
-        connected_drone_ids: Vec<NodeId>,
+        media: HashMap<String, String>,
         to_controller_event: Sender<ServerEvent>,
         from_controller_command: Receiver<ServerCommand>,
         packet_recv: Receiver<Packet>,
         packet_send: HashMap<NodeId, Sender<Packet>>,
     ) -> Self {
-
         MediaServer {
             id,
-            connected_drone_ids,
 
             reassembling_messages: Default::default(),
             sending_messages: Default::default(),
@@ -71,32 +68,8 @@ impl MediaServer{
             packet_recv,
             packet_send,
 
-            media: Default::default(),
+            media
         }
-    }
-
-    fn prepare_content() -> HashMap<String, String> {
-        use std::fs;
-
-        let mut content: HashMap<String, String> = Default::default(); // A vector to store the image data
-
-        for (image_key, image_path) in IMAGE_PATHS {
-
-            let image_data: Vec<u8> = fs::read(image_path).expect("Failed to read image file");
-            let image_data_encoded = base64::encode(&image_data);
-            content.insert(image_key.to_string(), image_data_encoded);
-        }
-
-        // Calculate the step size for removing elements
-        let len = content.len();
-        let step = len / 4;
-
-        // Retain only the elements that aren't in the removal step
-        content.into_iter()
-            .enumerate()
-            .filter(|(index, _)| (index + 1) % step != 0)
-            .map(|(_, (key_val, image))| (key_val, image))
-            .collect::<HashMap<String, String>>()
     }
 }
 
