@@ -60,6 +60,8 @@ pub enum ClientCommand {
     RunUI,
     StartFlooding,
     AskTypeTo(ServerId),
+    RequestText(NodeId),
+    RequestMedia(NodeId),
 }
 
 
@@ -132,5 +134,18 @@ impl Display for ServerType {
             ServerType::Undefined => "Undefined",
         };
         write!(f, "{}", name)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+pub enum ClientType {
+    Chat,
+    Web,
+}
+
+
+impl Display for ClientType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
     }
 }

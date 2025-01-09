@@ -9,6 +9,7 @@ use wg_2024::{
     packet::{NodeType, Packet, PacketType}
 };
 use crate::general_use::{ClientCommand, ClientEvent, ServerCommand, ServerEvent};
+use crate::general_use::{ClientType, ServerType};
 
 pub struct SimulationState {
     pub nodes: HashMap<NodeId, NodeType>,
@@ -38,6 +39,7 @@ pub struct SimulationController {
     pub command_senders_clients: HashMap<NodeId, Sender<ClientCommand>>,
     pub command_senders_servers: HashMap<NodeId, Sender<ServerCommand>>,
     pub packet_senders: HashMap<NodeId, Sender<Packet>>,
+    pub servers: HashMap<NodeId, ServerType>,
 }
 
 
@@ -66,6 +68,7 @@ impl SimulationController {
             server_event_sender,
             server_event_receiver,
             packet_senders: HashMap::new(),
+            servers: HashMap::new(),
         }
     }
 
@@ -282,12 +285,47 @@ It uses the command_senders map to find the appropriate sender channel.
         }
     }
 
-    pub fn get_list_clients(&self) -> Vec<NodeId> {
-        self.command_senders_clients.keys().copied().collect()
+    pub fn get_list_clients(&self) -> Vec<(ClientType, NodeId)> {    // Returns clients with types
+        self.command_senders_clients
+            .keys()
+            .copied()
+            .enumerate()
+            .map(|(i, id)| {
+                if i % 2 == 0 {
+                    (ClientType::Chat, id)
+                } else {
+                    (ClientType::Web, id)
+                }
+            })
+            .collect()
     }
 
-    pub fn get_list_servers(&self) -> Vec<NodeId> {
-        self.command_senders_servers.keys().copied().collect()
+    /*pub fn get_server_type(&self, node_id: NodeId) -> ServerType {
+
+    }*/
+
+    pub fn get_list_servers(&self) -> Vec<(ServerType, NodeId)> {  // Returns Vec<(ServerType, NodeId)>
+        self.command_senders_servers
+            .keys()
+            .copied()
+            .map(|id| (self.get_server_type(id), id))
+            .collect()
+    }
+
+    ///This is the function for asking the server it's type, given the id of the server
+    pub fn ask_which_type(&self, client_id: NodeId, server_id: NodeId) -> Result<ServerType, String> {
+
+
+        if let Some(client_command_sender) = self.command_senders_clients.get(&client_id) {
+
+            if let Err(e) = client_command_sender.send(ClientCommand::AskTypeTo(server_id)) {
+                return Err(format!("Failed to send AskServerType command to client {}: {:?}", client_id, e));
+            }
+
+            return Ok(self.get_server_type(server_id)); // Return the server type
+
+        }
+        Err(format!("Client with id {} not found", client_id))
     }
 
     pub fn start_flooding_on_client(&self, client_id: NodeId) -> Result<(), String> {

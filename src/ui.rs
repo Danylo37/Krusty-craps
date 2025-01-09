@@ -4,13 +4,14 @@
 use std::io;
 use wg_2024::network::NodeId;
 use crate::simulation_controller::SimulationController;
+use crate::general_use::{ClientCommand, ClientType, ServerType};
 
 pub fn start_ui(mut controller: SimulationController) {
     loop {
 
         ///Choosing base options
         println!(
-"Choose an option
+            "Choose an option
 1. Use clients
 2. Crashing a drone
 3. Nothing"
@@ -78,53 +79,89 @@ fn take_user_input() -> String {
 }
 
 
-fn use_clients(controller: &mut SimulationController){
+fn use_clients(controller: &mut SimulationController) {
+    println!("\nAvailable Clients:\n");
 
-    println!("\n Which client? \n");
-
-    //Print clients, controller.get_list_clients() function that returns a vec<NodeId>
-    let clients_ids = controller.get_list_clients();
-    for (i, client) in clients_ids.iter().enumerate(){
-        println!(
-            "{}- Client with nodeId {} \n", i+1, client
-        );
+    let clients_with_types = controller.get_list_clients_with_types();  // Get clients with types
+    if clients_with_types.is_empty() {
+        println!("No clients registered.");
+        return;
     }
 
-    let user_choice = ask_input_user();
-    let client_id_chose = clients_ids[(user_choice-1) as usize];
-    ///We should do a check if the id user chose exists!!!
+    for (i, (client_type, client_id)) in clients_with_types.iter().enumerate() {
+        println!("{}. {} Client with Node ID {}", i + 1, client_type, client_id); // Display type
+    }
 
-    choose_action_client(client_id_chose, controller);
+
+    let user_choice = ask_input_user();
+
+    if let Some((client_type, client_id)) = clients_with_types.get((user_choice - 1) as usize) { // Check valid index
+        choose_action_client(*client_type, *client_id, controller); // Pass client_type
+    } else {
+        println!("Invalid client choice.");
+    }
+
 }
 
-fn choose_action_client(client_id_chose: NodeId, controller: &mut SimulationController) {
+fn choose_action_client(client_type: ClientType, client_id: NodeId, controller: &mut SimulationController) {
 
     //Variable that allows to go back
     let mut stay_inside = true;
     while stay_inside {
 
         ///Choosing client function
-        println!("\n\n Choose client function?");
-        println!(
-"1. Start flooding
-2. Ask the server something
-3. Go back"
-        );
-        //2 is to change with more servers
+        println!("\nChoose action for {} Client {}:", client_type, client_id);
 
-        let user_choice = ask_input_user();
+        match client_type {    // Different options for Web and Chat clients
+            ClientType::Chat => {
+                println!(
+                    "1. Start Flooding\n
+                    2. Ask Server Something\n
+                    3. Go Back"); // Chat client options
 
+                let user_choice = ask_input_user();
+                match user_choice {
+                    1 => {
+                        if let Err(e) = controller.start_flooding_on_client(client_id) {
+                            eprintln!("Error starting flooding: {}", e);
+                        }
+                    },
+                    2 => ask_server_action(client_id, controller),
+                    3 => stay_inside = false,
+                    _ => println!("Invalid choice."),
+                }
+            }
 
-        match user_choice {
-            1 => { controller.start_flooding_on_client(client_id_chose);}
-            2 => {ask_server_action(client_id_chose, controller)}
-            3 => { stay_inside = false; }
-            _ => println!("Not a valid option, choose again")
+            ClientType::Web => {
+                println!("1. Get list of servers");
+                println!("2. Request Text from Text Server");
+                println!("3. Request Media from Media Server");
+
+                println!("4. Go Back");
+
+                let user_choice = ask_input_user();
+                match user_choice {
+                    1 => {
+                        //TODO
+                    }
+
+                    2 => {
+                        //TODO
+                    }
+                    3 => {
+                        //TODO
+                    }
+
+                    4 => stay_inside = false,
+                    _ => println!("Invalid choice."),
+
+                }
+            }
         }
     }
 }
 
-fn ask_server_action(client_id_chose: NodeId, controller: &mut SimulationController) {
+fn ask_server_action(client_id: NodeId, controller: &mut SimulationController) {
 
     ///!!! To make with more servers
 
@@ -132,23 +169,80 @@ fn ask_server_action(client_id_chose: NodeId, controller: &mut SimulationControl
     let mut stay_inside = true;
     while stay_inside {
 
-        ///Choosing what to ask server
-        println!("\n\n What is your query?");
-        println!(
-"1. Ask type to the server
-2. More
-3. Go back"
-        );
+        println!("\nAvailable Servers:\n");
+
+        let server_ids_types = controller.get_list_servers_with_types(); // Get servers with types
+        if server_ids_types.is_empty() {
+            println!("No servers registered.");
+            stay_inside = false; // Or return to previous menu
+        }
+
+        for (i, (server_type, server_id)) in server_ids_types.iter().enumerate() {
+            println!("{}. {} Server with ID {}", i + 1, server_type, server_id);
+        }
+
+
+        println!("\nChoose a server (or 0 to go back):");
         let user_choice = ask_input_user();
 
-        match user_choice {
-            1 => { controller.ask_server_type_with_client_id(client_id_chose, 4).unwrap() } //For testing it doesn't choose the server, it's only one with NodeId 4
-            2 => println!("to do"),
-            3 => { stay_inside = false; }
-            _ => println!("Not a valid option, choose again")
+
+        if user_choice == 0 { //Go back
+            stay_inside = false;
+        }
+
+
+        if let Some((server_type, server_id)) = server_ids_types.get((user_choice - 1) as usize) { // Get server_type
+
+            match controller.ask_which_type(client_id, *server_id) {
+                Ok(server_type) => println!("Server type is: {}", server_type),  // Use returned server_type
+                Err(e) => println!("Error getting server type: {}", e),
+            }
+
+
+        } else {
+            println!("Invalid server choice.");
+
         }
 
     }
+}
+
+fn request_text_from_server(client_id: NodeId, server_list: &Vec<(ServerType, NodeId)>, controller: &mut SimulationController){
+    for (i, &(_, server_id)) in server_list.iter().enumerate() {
+        println!("{}. Text server with ID {}", i + 1, server_id);
+    }
+
+    println!("\nChoose a server:");
+    let user_choice = ask_input_user();
+
+    if let Some(&(_, server_id)) = server_list.get((user_choice - 1) as usize) {
+        if let Some(client_sender) = controller.command_senders_clients.get(&client_id) {
+            if let Err(e) = client_sender.send(ClientCommand::RequestText(server_id)) { // Correct command
+                eprintln!("Failed to send RequestText command: {:?}", e);
+            }
+        }
+    }
+
+}
+
+
+
+fn request_media_from_server(client_id: NodeId, server_list: &Vec<(ServerType, NodeId)>, controller: &mut SimulationController){
+    for (i, &(_, server_id)) in server_list.iter().enumerate() {
+        println!("{}. Media server with ID {}", i + 1, server_id);
+    }
+
+    println!("\nChoose a server:");
+    let user_choice = ask_input_user();
+
+    if let Some(&(_, server_id)) = server_list.get((user_choice - 1) as usize) {
+        if let Some(client_sender) = controller.command_senders_clients.get(&client_id) {
+            if let Err(e) = client_sender.send(ClientCommand::RequestMedia(server_id)) { // Correct command
+                eprintln!("Failed to send RequestMedia command: {:?}", e);
+            }
+        }
+    }
+
 }
 
 fn ask_comm_server(client_id_chose: NodeId, sever_id_chose: NodeId, controller: &mut SimulationController) {
