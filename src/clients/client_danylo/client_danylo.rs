@@ -138,6 +138,30 @@ impl ChatClientDanylo {
                 self.packet_send.remove(&id);
                 info!("Removed sender for node {}", id);
             }
+            // -------------- for tests -------------- \\
+            ClientCommand::StartFlooding => {
+                info!("Starting flooding");
+                match self.discovery() {
+                    Ok(_) => {
+                        println!("Discovery complete!");
+                    }
+                    Err(error) => {
+                        println!("Discovery failed: {}", error);
+                    }
+                };
+            }
+            ClientCommand::AskTypeTo(server_id) => {
+                info!("Requesting server type for server {}", server_id);
+                match self.request_server_type(server_id) {
+                    Ok(_) => {
+                        println!("Server type is: {}", self.servers.get(&server_id).unwrap());
+                    }
+                    Err(error) => {
+                        println!("Failed to get server type: {}", error);
+                    }
+                };
+            }
+            // -------------- for tests -------------- \\
         }
     }
 
