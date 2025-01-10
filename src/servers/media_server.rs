@@ -1,13 +1,15 @@
-use crossbeam_channel::{Receiver, Sender};
+use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::{HashMap};
 use std::fmt::Debug;
 use wg_2024::{
     network::{NodeId},
     packet::{
-        Packet
+        Packet,
+        PacketType,
     },
 };
 use crate::general_use::{Query, Response, ServerCommand, ServerEvent, ServerType};
+use crate::ui_traits::Monitoring;
 use super::server::MediaServer as CharTrait;
 use super::server::Server as MainTrait;
 
@@ -67,6 +69,50 @@ impl MediaServer {
             packet_send,
 
             media
+        }
+    }
+}
+
+impl Monitoring for MediaServer {
+    fn run_with_monitoring(&mut self, sender_to_gui: Sender<String>) {
+        loop {
+            select_biased! {
+                recv(self.get_from_controller_command()) -> command_res => {
+                    if let Ok(command) = command_res {
+                        match command {
+                            ServerCommand::AddSender(id, sender) => {
+                                self.get_packet_send().insert(id, sender);
+
+                            }
+                            ServerCommand::RemoveSender(id) => {
+                                self.get_packet_send().remove(&id);
+                            }
+                        }
+                    }
+                },
+                recv(self.get_packet_recv()) -> packet_res => {
+                    if let Ok(packet) = packet_res {
+                        match packet.pack_type {
+                            PacketType::Nack(nack) => self.handle_nack(nack, packet.session_id),
+                            PacketType::Ack(ack) => self.handle_ack(ack),
+                            PacketType::MsgFragment(fragment) => self.handle_fragment(fragment, packet.routing_header ,packet.session_id),
+                            PacketType::FloodRequest(flood_request) => self.handle_flood_request(flood_request, packet.session_id),
+                            PacketType::FloodResponse(flood_response) => self.handle_flood_response(flood_response),
+                        }
+                    }
+                },
+                default(std::time::Duration::from_millis(10)) => {
+                    self.handle_fragments_in_buffer_with_checking_status();
+                    self.send_packets_in_buffer_with_checking_status();
+                    self.update_routing_checking_status();
+
+                    let json_string = serde_json::to_string(&self).unwrap();
+                    if sender_to_gui.send(json_string).is_err() {
+                        eprintln!("Error sending data for Node {}", self.id);
+                        break; // Exit loop if sending fails
+                    }
+                 },
+            }
         }
     }
 }
