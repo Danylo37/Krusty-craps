@@ -271,7 +271,6 @@ impl NetworkInitializer {
         for client in clients {
             // Create command channel between controller and clients
             let (command_sender, command_receiver) = unbounded();
-            controller.register_client(client.id, command_sender);
 
             // Create packet channel between the client and the other nodes
             let (packet_sender, packet_receiver) = unbounded();
@@ -300,17 +299,23 @@ impl NetworkInitializer {
                 packet_senders_collection,
                 );
 
+            let mut client_type;
             match self.choose_client_type_evenly() {
                 ClientType::Web => {
+                    client_type = ClientType::Web;
                     self.create_and_spawn_client::<ChatClientDanylo>(client_params);
                     self.client_channels.insert(client.id, (packet_sender , ClientType::Chat));
                 },
 
                 ClientType::Chat=> {
+                    client_type = ClientType::Chat;
                     self.create_and_spawn_client::<ChatClientDanylo>(client_params);
                     self.client_channels.insert(client.id, (packet_sender , ClientType::Chat));
                 }
             };
+
+            controller.register_client(client.id, command_sender, client_type);
+
         }
     }
 
@@ -387,7 +392,7 @@ impl NetworkInitializer {
             cmd_receiver,
         );
 
-        thread::spawn(move || { 
+        thread::spawn(move || {
             client_instance.run_with_monitoring(sender_to_gui);
         });
     }
@@ -405,7 +410,6 @@ impl NetworkInitializer {
 
         for server in servers {
             let (command_sender, command_receiver) = unbounded();
-            controller.register_server(server.id, command_sender);
 
             // Creating sender to this server and receiver of this server
             let (packet_sender, packet_receiver) = unbounded();
@@ -471,6 +475,8 @@ impl NetworkInitializer {
                    ));
                 }
             };
+
+            controller.register_server(server.id, command_sender, server_type);
 
             self.server_channels.insert(server.id, (packet_sender, server_type));
 
