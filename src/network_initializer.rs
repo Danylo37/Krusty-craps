@@ -17,7 +17,7 @@ use wg_2024::{
 
 //Inner libraries
 use crate::{
-    {clients, clients::client::Client as trait_client},
+    clients::client::Client as TraitClient,
     general_use::{ClientEvent, ServerEvent, ClientType, ServerType, DroneId, UsingTimes},
     servers::{communication_server::CommunicationServer, text_server::TextServer, media_server::MediaServer, server::Server as ServerTrait},
     simulation_controller::SimulationController,
@@ -34,6 +34,10 @@ use fungi_drone::FungiDrone;
 use bagel_bomber::BagelBomber;
 use skylink::SkyLinkDrone;
 use RF_drone::RustAndFurious;
+use crate::clients::client_chen::ClientChen;
+use crate::clients::client_chen::ui_traits::Monitoring;
+use crate::clients::client_danylo::ChatClientDanylo;
+use crate::general_use::{ClientCommand, ClientId};
 use crate::servers::content;
 //use bobry_w_locie::drone::BoberDrone;
 
@@ -77,6 +81,7 @@ pub struct NetworkInitializer {
     client_channels: HashMap<NodeId, (Sender<Packet>, ClientType)>,
     server_channels: HashMap<NodeId, (Sender<Packet>, ServerType)>,
     drone_brand_usage: HashMap<DroneBrand, UsingTimes>,
+    client_type_usage: HashMap<ClientType, UsingTimes>,
 }
 
 impl NetworkInitializer {
@@ -86,6 +91,7 @@ impl NetworkInitializer {
             client_channels: HashMap::new(),
             server_channels: HashMap::new(),
             drone_brand_usage: DroneBrand::iter().map(|brand| (brand, 0)).collect(),
+            client_type_usage: ClientType::iter().map(|client_type| (client_type, 0)).collect(),
         }
     }
     pub fn initialize_from_file(&mut self, config_path: &str) {
@@ -287,24 +293,112 @@ impl NetworkInitializer {
                 .filter_map(|&node| self.get_sender_for_node(node).map(|sender| (node, sender.clone())))
                 .collect();
 
-            // Initialize client
-            let mut client_instance = clients::client_danylo::client_danylo::ChatClientDanylo::new(
-                client.id,                       // node_id: NodeId
-                packet_senders_collection,       // pack_send: HashMap<NodeId, Sender<Packet>>
-                packet_receiver,                 // pack_recv: Receiver<Packet>
-                client_events_sender_clone,      // controller_send: Sender<ClientEvent>
-                command_receiver,                // controller_recv: Receiver<ClientCommand>
-            );
+            let client_params = (
+                client.id,
+                client_events_sender_clone,
+                command_receiver,
+                packet_receiver,
+                packet_senders_collection,
+                );
 
-            //To add random spawn for client, when random spawned we need to keep the type just spawned and insert it here
-            self.client_channels.insert(client_instance.id, (packet_sender , ClientType::Chat));
+            match self.choose_client_type_evenly() {
+                ClientType::Web => {
+                    self.create_and_spawn_client::<ClientChen>(client_params);
+                    self.client_channels.insert(client.id, (packet_sender , ClientType::Chat));
+                },
 
-            // Spawn a thread for each client
-            thread::spawn(move || {
-                client_instance.run();
-            });
+                ClientType::Chat=> {
+                    self.create_and_spawn_client::<ChatClientDanylo>(client_params);
+                    self.client_channels.insert(client.id, (packet_sender , ClientType::Chat));
+                }
+            };
         }
     }
+
+    fn choose_client_type_evenly(&mut self) -> ClientType {
+        // Transform the DroneBrand enum into iterator and then collect into a vector
+        let client_types = ClientType::iter().collect::<Vec<_>>();
+        // We retain the Brands that are least used.
+        if let Some(&min_usage) = self.client_type_usage.values().min() {
+            let min_usage_client_types: Vec<_> = client_types
+                .iter()
+                .filter(|&&client_type| self.client_type_usage.get(&client_type) == Some(&min_usage))
+                .cloned()
+                .collect();
+            // From those we choose randomly one Brand and we use it
+            if let Some(&chosen_type) = min_usage_client_types.choose(&mut rand::thread_rng()) {
+                // Update usage count
+                if let Some(usage) = self.client_type_usage.get_mut(&chosen_type) {
+                    *usage += 1;
+                }
+                return chosen_type;
+            }
+        }
+        //Shouldn't happen
+        ClientType::Web
+    }
+
+    fn create_and_spawn_client<T>(   //without gui monitoring
+        &mut self,
+        client_params: (
+            ClientId,
+            Sender<ClientEvent>,
+            Receiver<ClientCommand>,
+            Receiver<Packet>,
+            HashMap<NodeId, Sender<Packet>>,
+        ),
+    ) where
+        T: TraitClient + Send + 'static, // Ensure T implements the Client trait and is Sendable
+    {
+        let (client_id, event_sender, cmd_receiver, pkt_receiver, pkt_senders) = client_params;
+
+        let client_instance = T::new(
+            client_id,
+            pkt_senders,
+            pkt_receiver,
+            event_sender,
+            cmd_receiver,
+        );
+
+        thread::spawn(move || {
+            match client_instance {
+                Ok(mut client) => client.run(),
+                Err(e) => panic!("Failed to run client {}: {}", client_id, e),
+            }
+        });
+    }
+
+    fn create_and_spawn_client_with_monitoring<T>(   //with gui monitoring
+                                     &mut self,
+                                     sender_to_gui: Sender<String>,
+                                     client_params: (
+                                         ClientId,
+                                         Sender<ClientEvent>,
+                                         Receiver<ClientCommand>,
+                                         Receiver<Packet>,
+                                         HashMap<NodeId, Sender<Packet>>,
+                                     ),
+    ) where
+        T: TraitClient + Monitoring +  Send + 'static, // Ensure T implements the Client trait and is Sendable
+    {
+        let (client_id, event_sender, cmd_receiver, pkt_receiver, pkt_senders) = client_params;
+
+        let client_instance = T::new(
+            client_id,
+            pkt_senders,
+            pkt_receiver,
+            event_sender,
+            cmd_receiver,
+        );
+
+        thread::spawn(move || {
+            match client_instance {
+                Ok(mut client) => client.run_with_monitoring(sender_to_gui),
+                Err(e) => panic!("Failed to run client {}: {}", client_id, e),
+            }
+        });
+    }
+
     /// SERVERS GENERATION
     pub fn create_servers(
         &mut self,

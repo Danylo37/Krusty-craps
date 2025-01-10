@@ -11,6 +11,7 @@ impl CommandHandler for ClientChen{
             ClientCommand::RemoveSender(target_node_id) => {
                 self.communication_tools.packet_send.remove(&target_node_id);
             }
+            _ => {}
         }
     }
 }

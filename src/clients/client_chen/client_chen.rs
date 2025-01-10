@@ -1,3 +1,4 @@
+use crate::clients::Client as TraitClient;
 ///--------------------------
 ///todo!
 /// 1) maybe do a flooding to update those things when the clients starts to run.
@@ -11,6 +12,7 @@
 use crate::clients::client_chen::prelude::*;
 use crate::clients::client_chen::{CommandHandler, FragmentsHandler, PacketsReceiver, Router, Sending};
 
+#[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct ClientChen {
     // Client's metadata
     pub(crate) metadata: NodeMetadata,
@@ -26,11 +28,17 @@ pub(crate) struct ClientChen {
     pub(crate) network_info: NetworkInfo,
 }
 
-impl ClientChen {
-    pub(crate) fn new(
-        node_id: NodeId,
-        node_type: NodeType,
-        connected_nodes_ids: HashSet<NodeId>,
+#[derive(Debug)]
+pub enum ClientEvent {
+    PacketSent(Packet),
+    SenderRemoved(NodeId),
+    SenderAdded(NodeId),
+    DoingFlood(FloodId),
+    FloodIsFinished(FloodId),
+}
+impl TraitClient for ClientChen {
+    fn new(
+        id: NodeId,
         packet_send: HashMap<NodeId, Sender<Packet>>,
         packet_recv: Receiver<Packet>,
         controller_send: Sender<ClientEvent>,
@@ -39,19 +47,19 @@ impl ClientChen {
         Self {
             // Client's metadata
             metadata: NodeMetadata {
-                node_id,
-                node_type,
+                node_id: id,
+                node_type: NodeType::Client,
             },
 
             // Status
             status: NodeStatus {
                 flood_id: 0, // Initial value to be 0 for every new client
-                session_id: (node_id as u64) << 56, // Put the id of the client in the first 8 bits
+                session_id: (id as u64) << 56, // Put the id of the client in the first 8 bits
             },
 
             // Communication-related data
             communication: CommunicationInfo {
-                connected_nodes_ids,
+                connected_nodes_ids: packet_send.keys().cloned().collect(),
                 registered_communication_servers: HashMap::new(),
                 registered_content_servers: HashSet::new(),
                 routing_table: HashMap::new(),
@@ -79,56 +87,52 @@ impl ClientChen {
 
             // Network Info
             network_info: NetworkInfo{
-              topology: HashMap::new(),
+                topology: HashMap::new(),
             },
 
         }
     }
 
-
-    ///the client needs to obey to the controller commands
-    ///then when there are packets arriving, need to handle them:
-    /// -storing the fragments in the fragment buffer in order to reassemble them, send an ack for each of them
-    /// -storing all the packets in the input packet disk (we don't unify the input packet disk with the output
-    ///  packet disk because otherwise we need another protocol to manage them and I don't want to think much about it)
-    ///
-    ///in the free time, you need to handle the fragments in the buffer and send the packets in the buffer
-    pub(crate) fn run(&mut self) {
+    fn run(&mut self) {
         loop {
             select_biased! {
-            recv(self.communication_tools.controller_recv) -> command_res => {
-                if let Ok(command) = command_res {
-                    self.handle_controller_command(command);
-                }
-            },
-            recv(self.communication_tools.packet_recv) -> packet_res => {
-                if let Ok(packet) = packet_res {
-                    self.handle_received_packet(packet);
-                }
-            },
-            default(std::time::Duration::from_millis(10)) => {
-                self.handle_fragments_in_buffer_with_checking_status();
-                self.send_packets_in_buffer_with_checking_status();
-                self.update_routing_checking_status();
-            },
-        }
+                recv(self.communication_tools.controller_recv) -> command_res => {
+                    if let Ok(command) = command_res {
+                        self.handle_controller_command(command);
+                    }
+                },
+                recv(self.communication_tools.packet_recv) -> packet_res => {
+                    if let Ok(packet) = packet_res {
+                        self.handle_received_packet(packet);
+                    }
+                },
+                default(std::time::Duration::from_millis(10)) => {
+                    self.handle_fragments_in_buffer_with_checking_status();
+                    self.send_packets_in_buffer_with_checking_status();
+                    self.update_routing_checking_status();
+                 },
+            }
         }
     }
+
 }
 
 // Metadata about the client
+#[derive(Clone)]
 pub(crate) struct NodeMetadata {
     pub(crate) node_id: NodeId,
     pub(crate) node_type: NodeType,
 }
 
 // Status of the client
+#[derive(Clone)]
 pub(crate) struct NodeStatus {
     pub(crate) flood_id: FloodId,
     pub(crate) session_id: SessionId,
 }
 
 // Communication-related information
+#[derive(Clone)]
 pub(crate) struct CommunicationInfo {
     pub(crate) connected_nodes_ids: HashSet<NodeId>,
     pub(crate) registered_communication_servers: HashMap<ServerId, Vec<ClientId>>, // Servers registered by the client with respective registered clients
@@ -137,6 +141,7 @@ pub(crate) struct CommunicationInfo {
 }
 
 // Tools for communication
+#[derive(Clone)]
 pub(crate) struct CommunicationTools {
     pub(crate) packet_send: HashMap<NodeId, Sender<Packet>>,  // Sender for each connected node
     pub(crate) packet_recv: Receiver<Packet>,                // Unique receiver for this client
@@ -145,8 +150,9 @@ pub(crate) struct CommunicationTools {
 }
 
 // Storage-related data
+#[derive(Clone)]
 pub struct NodeStorage {
-    pub(crate) irresolute_path_traces: HashSet<Vec<(NodeId, NodeType)>>,   //Temporary storage for the path_traces that are received but we didn't know how to process them
+    pub(crate) irresolute_path_traces: HashSet<Vec<(NodeId, NodeType)>>,   //Temporary storage for the path_traces that are received, but we didn't know how to process them
     pub(crate) fragment_assembling_buffer: HashMap<(SessionId, FragmentIndex), Packet>, // Temporary storage for recombining fragments
     pub(crate) output_buffer: HashMap<(SessionId, FragmentIndex), Packet>,              // Buffer for outgoing messages
     pub(crate) input_packet_disk: HashMap<(SessionId, FragmentIndex), Packet>,          // Storage for received packets
@@ -156,96 +162,63 @@ pub struct NodeStorage {
     pub(crate) file_storage: HashMap<ServerId, File>,                                  // Files received from media servers
 }
 
+#[derive(Clone)]
 pub(crate) struct NetworkInfo{
     pub(crate) topology: HashMap<NodeId, NodeInfo>,
 }
 
-
+#[derive(Clone)]
 pub struct NodeInfo{
     pub(crate) node_id: NodeId,
     pub(crate) node_type: NodeType,
     pub(crate) specific_info: SpecificInfo,
 }
+#[derive(Clone)]
 pub enum SpecificInfo{
     ClientInfo(ClientInformation),
     ServerInfo(ServerInformation),
     DroneInfo(DroneInformation),
 }
-
+#[derive(Clone)]
 pub struct ClientInformation{
     pub(crate) connected_nodes_ids: HashSet<NodeId>,
 }
+impl ClientInformation{
+    fn new(connected_nodes_ids: HashSet<NodeId>) -> ClientInformation{
+        ClientInformation{
+            connected_nodes_ids
+        }
+    }
+}
 
+#[derive(Clone)]
 pub struct ServerInformation{
     pub(crate) connected_nodes_ids: HashSet<NodeId>,
     pub(crate) server_type: ServerType,
 }
 
-pub struct DroneInformation{
-    pub(crate) connected_nodes_ids: HashSet<NodeId>,
-    //pub(crate) drone_brand: DroneBrand,
-}
-
-
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
-pub enum DroneBrand {
-    KrustyDrone,  // Our Drone
-    RustyDrone,
-    Rustable,
-    BagelBomber,
-    RustAndFurious,
-    Fungi,
-    RustBusters,
-    RustEze,
-    SkyLink,
-    RollingDrones,
-   // BobryWLucie,
-}
-
-impl DroneBrand {
-    // Returns an iterator over all variants of DroneBrand
-    pub fn iter() -> impl Iterator<Item = DroneBrand> {
-        [
-            DroneBrand::KrustyDrone,
-            DroneBrand::RustyDrone,
-            DroneBrand::Rustable,
-            DroneBrand::BagelBomber,
-            DroneBrand::RustAndFurious,
-            DroneBrand::Fungi,
-            DroneBrand::RustBusters,
-            DroneBrand::RustEze,
-            DroneBrand::SkyLink,
-            DroneBrand::RollingDrones,
-            //DroneBrand::BobryWLucie,
-        ]
-            .into_iter()
-            .copied()
+impl ServerInformation{
+    fn new(connected_nodes_ids: HashSet<NodeId>, server_type: ServerType) -> ServerInformation{
+        ServerInformation{
+            connected_nodes_ids,
+            server_type
+        }
     }
 }
 
-/*
-    ///PROTOCOL NOTES:
-
-    ///REMINDER:
-    ///we assume that the server when receives a flood_request from a client/server, it both:
-    ///1) sends back a flood_response to the client
-    ///2) forwards the flood_request to his neighbors, (the flood_request stops until encounters a client).
-
-
-    ///FOR THE SERVER:
-    /// notice the increasing using_times when sending packet is done in sending to connected nodes in edge nodes
-    ///note that just the drones don't need to do that, the servers need to do that but only the part of the route
-    ///that cuts the nodes before the server.
-    ///and when the server receives an ack_packet directed to the original sender_client then the server
-    ///decreases the using times of the first part of the route and increases the second part of the route
-    ///contained in the source routing header of the ack_packet.
+#[derive(Clone)]
+pub struct DroneInformation{
+    pub(crate) connected_nodes_ids: HashSet<NodeId>,
+}
+impl DroneInformation{
+    fn new(connected_nodes_ids: HashSet<NodeId>) -> DroneInformation{
+        DroneInformation{
+            connected_nodes_ids
+        }
+    }
+}
 
 
 
-    ///usually send back an ack that contains the fragment_index and the session_id of the
-    /// packet ack_packet of the ack will be the same session_id of the packet_arrived + 1
-    ///so when I handle the ack I can recover the fragment packet doing
-    /// packet_disk(ack_packet.session_id -1, Some(ack.fragment_index))
 
-*/
 

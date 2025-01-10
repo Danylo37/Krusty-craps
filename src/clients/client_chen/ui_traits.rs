@@ -1,47 +1,36 @@
 use crate::clients::client_chen::prelude::*;
-use eframe::egui;
-use crate::clients::client_chen::ClientChen;
-impl eframe::App for ClientChen {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Top panel for general information
-        egui::TopBottomPanel::top("Top Panel").show(ctx, |ui| {
-            ui.heading(format!("Monitoring Client: Node ID {}", self.metadata.node_id));
-            ui.label(format!("Node Type: {:?}", self.metadata.node_type));
-        });
+use crate::clients::client_chen::{ClientChen, CommandHandler, FragmentsHandler, PacketsReceiver, Router, Sending};
 
-        // Central panel for detailed monitoring
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.collapsing("Status", |ui| {
-                ui.label(format!("Flood ID: {}", self.status.flood_id));
-                ui.label(format!("Session ID: {}", self.status.session_id));
-            });
+pub trait Monitoring{
+    fn run_with_monitoring(&mut self, sender_to_gui:Sender<String>);
+}
 
-            ui.collapsing("Communication Info", |ui| {
-                ui.label(format!("Connected Nodes: {:?}", self.communication.connected_nodes_ids));
-                ui.label(format!("Routing Table Size: {}", self.communication.routing_table.len()));
-                ui.label(format!(
-                    "Registered Content Servers: {}",
-                    self.communication.registered_content_servers.len()
-                ));
-            });
+impl Monitoring for ClientChen{
+    fn run_with_monitoring(&mut self, sender_to_gui: Sender<String>) {
+        loop {
+            select_biased! {
+                recv(self.communication_tools.controller_recv) -> command_res => {
+                    if let Ok(command) = command_res {
+                        self.handle_controller_command(command);
+                    }
+                },
+                recv(self.communication_tools.packet_recv) -> packet_res => {
+                    if let Ok(packet) = packet_res {
+                        self.handle_received_packet(packet);
+                    }
+                },
+                default(std::time::Duration::from_millis(10)) => {
+                    self.handle_fragments_in_buffer_with_checking_status();
+                    self.send_packets_in_buffer_with_checking_status();
+                    self.update_routing_checking_status();
 
-            ui.collapsing("Storage Info", |ui| {
-                ui.label(format!(
-                    "Fragments in Buffer: {}",
-                    self.storage.fragment_assembling_buffer.len()
-                ));
-                ui.label(format!("Input Packets: {}", self.storage.input_packet_disk.len()));
-                ui.label(format!("Output Packets: {}", self.storage.output_packet_disk.len()));
-                ui.label(format!(
-                    "Chat Messages: {}",
-                    self.storage.message_chat.keys().len()
-                ));
-                ui.label(format!("Files Stored: {}", self.storage.file_storage.len()));
-            });
-
-            ui.collapsing("Network Info", |ui| {
-                ui.label(format!("Topology Size: {}", self.network_info.topology.len()));
-            });
-        });
+                    let json_string = serde_json::to_string(&self).unwrap();
+                    if sender_to_gui.send(json_string).is_err() {
+                        eprintln!("Error sending data for Node {}", self.metadata.node_id);
+                        break; // Exit loop if sending fails
+                    }
+                 },
+            }
+        }
     }
 }
