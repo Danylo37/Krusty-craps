@@ -34,7 +34,6 @@ use fungi_drone::FungiDrone;
 use bagel_bomber::BagelBomber;
 use skylink::SkyLinkDrone;
 use RF_drone::RustAndFurious;
-use crate::clients::client_chen::ClientChen;
 use crate::ui_traits::Monitoring;
 use crate::clients::client_danylo::ChatClientDanylo;
 use crate::general_use::{ClientCommand, ClientId};
@@ -82,20 +81,16 @@ pub struct NetworkInitializer {
     server_channels: HashMap<NodeId, (Sender<Packet>, ServerType)>,
     drone_brand_usage: HashMap<DroneBrand, UsingTimes>,
     client_type_usage: HashMap<ClientType, UsingTimes>,
-    sender_to_gui: Sender<String>,
 }
 
 impl NetworkInitializer {
-    pub fn new(
-        sender_to_gui: Sender<String>
-    ) -> Self {
+    pub fn new() -> Self {
         Self {
             drone_channels: HashMap::new(),
             client_channels: HashMap::new(),
             server_channels: HashMap::new(),
             drone_brand_usage: DroneBrand::iter().map(|brand| (brand, 0)).collect(),
             client_type_usage: ClientType::iter().map(|client_type| (client_type, 0)).collect(),
-            sender_to_gui,
         }
     }
     pub fn initialize_from_file(&mut self, config_path: &str) {
@@ -222,7 +217,7 @@ impl NetworkInitializer {
             f32,
         ),
     ) where
-        T: TraitDrone
+        T: TraitDrone + Send + 'static, // Ensure T implements the Drone trait and is Sendable
     {
         let (drone_id, event_sender, cmd_receiver, pkt_receiver, pkt_senders, pdr) = drone_params;
 
@@ -307,7 +302,7 @@ impl NetworkInitializer {
 
             match self.choose_client_type_evenly() {
                 ClientType::Web => {
-                    self.create_and_spawn_client::<ClientChen>(client_params);
+                    self.create_and_spawn_client::<ChatClientDanylo>(client_params);
                     self.client_channels.insert(client.id, (packet_sender , ClientType::Chat));
                 },
 
@@ -352,11 +347,11 @@ impl NetworkInitializer {
             HashMap<NodeId, Sender<Packet>>,
         ),
     ) where
-        T: TraitClient
+        T: TraitClient + Send + 'static, // Ensure T implements the Client trait and is Sendable
     {
         let (client_id, event_sender, cmd_receiver, pkt_receiver, pkt_senders) = client_params;
 
-        let client_instance = T::new(
+        let mut client_instance = T::new(
             client_id,
             pkt_senders,
             pkt_receiver,
@@ -365,10 +360,7 @@ impl NetworkInitializer {
         );
 
         thread::spawn(move || {
-            match client_instance {
-                Ok(mut client) => client.run(),
-                Err(e) => panic!("Failed to run client {}: {}", client_id, e),
-            }
+            client_instance.run();
         });
     }
 
@@ -383,7 +375,7 @@ impl NetworkInitializer {
                                          HashMap<NodeId, Sender<Packet>>,
                                      ),
     ) where
-        T: TraitClient + Monitoring
+        T: TraitClient + Monitoring +  Send + 'static, // Ensure T implements the Client trait and is Sendable
     {
         let (client_id, event_sender, cmd_receiver, pkt_receiver, pkt_senders) = client_params;
 
@@ -395,8 +387,8 @@ impl NetworkInitializer {
             cmd_receiver,
         );
 
-        thread::spawn(move || {
-            client_instance.run();
+        thread::spawn(move || { 
+            client_instance.run_with_monitoring(sender_to_gui);
         });
     }
 
@@ -528,7 +520,7 @@ impl NetworkInitializer {
                     Some(NodeType::Drone) => controller.add_sender(*node_id, NodeType::Drone ,connected_node_id, sender),
                     Some(NodeType::Client) => controller.add_sender(*node_id, NodeType::Client ,connected_node_id, sender),
                     Some(NodeType::Server) => controller.add_sender(*node_id, NodeType::Server , connected_node_id, sender),
-                    
+
                     None => panic!("Sender channel not found for node {}!", *node_id),
                 };
             }
