@@ -81,4 +81,14 @@ impl MessageFragments {
     pub fn increment_last_index(&mut self) {
         self.last_fragment_index += 1;
     }
+
+    /// ###### Retrieves the route for the message fragments.
+    pub fn get_route(&self) -> &Vec<NodeId> {
+        &self.route
+    }
+
+    /// ###### Updates the route for the message fragments.
+    pub fn update_route(&mut self, route: Vec<NodeId>) {
+        self.route = route;
+    }
 }
