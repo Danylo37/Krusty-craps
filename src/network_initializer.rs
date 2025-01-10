@@ -74,8 +74,8 @@ impl DroneBrand {
 
 pub struct NetworkInitializer {
     drone_channels: HashMap<NodeId, Sender<Packet>>,
-    client_channels: HashMap<(NodeId, ClientType), Sender<Packet>>,
-    server_channels: HashMap<(NodeId, ServerType), Sender<Packet>>,
+    client_channels: HashMap<NodeId, (Sender<Packet>, ClientType)>,
+    server_channels: HashMap<NodeId, (Sender<Packet>, ServerType)>,
     drone_brand_usage: HashMap<DroneBrand, UsingTimes>,
 }
 
@@ -297,7 +297,7 @@ impl NetworkInitializer {
             );
 
             //To add random spawn for client, when random spawned we need to keep the type just spawned and insert it here
-            self.client_channels.insert((client_instance.id, ClientType::Chat), packet_sender);
+            self.client_channels.insert(client_instance.id, (packet_sender , ClientType::Chat)));
 
             // Spawn a thread for each client
             thread::spawn(move || {
@@ -385,7 +385,7 @@ impl NetworkInitializer {
                 }
             };
 
-            self.server_channels.insert((server.id, server_type), packet_sender);
+            self.server_channels.insert(server.id, (packet_sender, server_type);
 
             // Create and run server
             thread::spawn(move ||
@@ -447,15 +447,11 @@ impl NetworkInitializer {
         if let Some(sender) = self.drone_channels.get(&node_id) {
             return Some(sender.clone());
         }
-        for ((id, _), sender) in &self.client_channels {
-            if *id == node_id {
-                return Some(sender.clone());
-            }
+        if let Some((sender, _)) = self.client_channels.get(&node_id) {
+            return Some(sender.clone());
         }
-        for ((id, _), sender) in &self.server_channels {
-            if *id == node_id {
-                return Some(sender.clone());
-            }
+        if let Some((sender, _)) = self.server_channels.get(&node_id) {
+            return Some(sender.clone());
         }
         None // Sender not found in any HashMap
     }
@@ -464,15 +460,11 @@ impl NetworkInitializer {
         if self.drone_channels.contains_key(node_id) {
             return Some(NodeType::Drone);
         }
-        for ((id, _), sender) in &self.client_channels {
-            if *id == node_id {
-                return Some(NodeType::Client);
-            }
+        if self.drone_channels.contains_key(node_id) {
+            return Some(NodeType::Client);
         }
-        for ((id, _), sender) in &self.server_channels {
-            if *id == node_id {
-                return Some(NodeType::Server);
-            }
+        if self.drone_channels.contains_key(node_id) {
+            return Some(NodeType::Server);
         }
         None // Node type not found
     }
