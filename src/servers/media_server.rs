@@ -11,8 +11,6 @@ use crate::general_use::{Query, Response, ServerCommand, ServerEvent, ServerType
 use super::server::MediaServer as CharTrait;
 use super::server::Server as MainTrait;
 
-use super::content::IMAGE_PATHS;
-
 type FloodId = u64;
 type SessionId = u64;
 #[derive(Debug)]
