@@ -12,17 +12,17 @@ pub fn choose_random_texts() -> Vec<(u8, String)>{
 
     let n_files = trying_closures(random::<u8>()%10);
 
-    let mut vec_files = Vec::new();
-    if(random::<u8>()%2 == 0){
+    let mut vec_files:Vec<(u8, String)> = Vec::new();
+    if random::<u8>()%2 == 0{
         for i in 0..n_files{
-            vec_files.push((i,TEXT[i].clone()));
+            vec_files.push((i,TEXT[i as usize].to_string()));
         }
     }else{
         for i in (0..n_files).rev(){
-            vec_files.push((i,TEXT[i].clone()));
+            vec_files.push((i,TEXT[i as usize].to_string()));
         }
     }
-
+    vec_files
 }
 
 pub fn get_media(vec_files: Vec<(u8, String)>) -> HashMap<String, String>{
@@ -30,7 +30,7 @@ pub fn get_media(vec_files: Vec<(u8, String)>) -> HashMap<String, String>{
         // Check if the `index_media` exists in `vec_files`
         if vec_files.iter().any(|(index_chose, _)| *index_chose == *index_media) {
             // Return the tuple (ref_s, media) if the condition is true
-            Some((ref_s.clone(), media.clone()))
+            Some((ref_s.to_string(), media.to_string()))
         } else {
             // Discard the element by returning None
             None

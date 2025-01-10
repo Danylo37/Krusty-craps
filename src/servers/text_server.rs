@@ -12,8 +12,6 @@ use crate::general_use::{Query, Response, ServerCommand, ServerEvent, ServerType
 use super::server::TextServer as CharTrait;
 use super::server::Server as MainTrait;
 
-use super::content::TEXT;
-
 type FloodId = u64;
 type SessionId = u64;
 #[derive(Debug)]
