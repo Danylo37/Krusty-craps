@@ -7,13 +7,9 @@ use crate::{
     clients::client::Client,
     general_use::ServerType,
 };
+use super::client_danylo::ChatClientDanylo;
 
-use super::{
-    client_danylo::ChatClientDanylo,
-    ui::ChatClientUI,
-};
-
-pub fn test_ui() {
+pub fn test_gui() {
     let mut c1 = create_test_chat_client(1);
 
     c1.topology.insert(2, HashSet::from_iter(vec![1, 4]));
@@ -35,8 +31,7 @@ pub fn test_ui() {
     c1.inbox.push((9, "Hello".to_string()));
     c1.inbox.push((11, "What is your name?".to_string()));
 
-    let mut ui = ChatClientUI::new(&mut c1);
-    ui.run();
+    c1.run_gui();
 }
 
 pub fn create_test_chat_client(id: NodeId) -> ChatClientDanylo {
