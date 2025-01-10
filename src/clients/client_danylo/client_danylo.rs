@@ -16,12 +16,12 @@ use wg_2024::{
 
 use crate::{
     general_use::{ClientCommand, ClientEvent, Message, Query, Response, ServerType},
-    clients::{
-        client::Client,
-        client_danylo::ui::ChatClientUI,
-    },
+    clients::client::Client
 };
-use super::message_fragments::MessageFragments;
+use super::{
+    message_fragments::MessageFragments,
+    chat_gui::ChatGUI,
+};
 
 pub struct ChatClientDanylo {
     // ID
@@ -142,8 +142,7 @@ impl ChatClientDanylo {
                 info!("Removed sender for node {}", id);
             }
             ClientCommand::RunUI => {
-                info!("Running UI");
-                ChatClientUI::new(self).run();
+                self.run_gui();
             }
             // -------------- for tests -------------- \\
             ClientCommand::StartFlooding => {
@@ -169,7 +168,15 @@ impl ChatClientDanylo {
                 };
             }
             // -------------- for tests -------------- \\
+            _ => {}
         }
+    }
+
+    /// ###### Runs the GUI for the chat client.
+    /// Creates a new instance of the ChatGUI and runs it.
+    pub fn run_gui(&mut self) {
+        info!("Running GUI");
+        ChatGUI::new(self).run();
     }
 
     /// ###### Handles the acknowledgment (ACK) for a given session and fragment.
@@ -205,21 +212,33 @@ impl ChatClientDanylo {
 
         match nack.nack_type {
             NackType::ErrorInRouting(id) => {
-                self.update_topology_and_routes(id);
-                self.external_error = Some(format!("ErrorInRouting; drone doesn't have neighbor with id {}", id));
+                self.handle_error_in_routing(id, session_id);
             }
             NackType::DestinationIsDrone => {
-                self.external_error = Some("Error: DestinationIsDrone".to_string());
+                self.external_error = Some("DestinationIsDrone".to_string());
             }
             NackType::UnexpectedRecipient(recipient_id) => {
-                self.external_error = Some(format!("Error: UnexpectedRecipient (node with id {})", recipient_id));
+                self.external_error = Some(format!("UnexpectedRecipient (node with id {})", recipient_id));
             }
             NackType::Dropped => self.resend_last_packet(session_id),
         }
     }
 
+    /// ###### Handles an error in routing based on the received NACK.
+    /// Updates the network topology and routes based on the error node.
+    /// Resends the last packet for the specified session if a new route is found.
+    fn handle_error_in_routing(&mut self, error_node: NodeId, session_id: u64) {
+        self.update_topology_and_routes(error_node);
+        if self.message_to_send.as_ref().unwrap().get_route().is_empty() {
+            self.external_error = Some("ErrorInRouting; no available routes".to_string());
+            return;
+        }
+        self.resend_last_packet(session_id);
+    }
+
     /// ###### Updates the network topology and routes based on the received NACK.
     /// Removes the node that caused the error from the topology and routes.
+    /// Finds new routes for the servers that need them.
     fn update_topology_and_routes(&mut self, error_node: NodeId) {
         // Remove the node that caused the error from the topology.
         for (_, neighbors) in self.topology.iter_mut() {
@@ -231,6 +250,44 @@ impl ChatClientDanylo {
         // Remove the routes that contain the node that caused the error.
         self.routes.retain(|_, path| !path.contains(&error_node));
         info!("Removed node {} from the routes", error_node);
+
+        // Collect server IDs that need new routes.
+        let servers_to_update: Vec<NodeId> = self
+            .routes
+            .iter()
+            .filter(|(_, path)| path.is_empty())
+            .map(|(server_id, _)| *server_id)
+            .collect();
+
+        // Find new routes for the collected server IDs.
+        for server_id in servers_to_update {
+            if let Some(new_path) = self.find_route_to(server_id) {
+                if let Some(path) = self.routes.get_mut(&server_id) {
+                    *path = new_path;
+                    info!("Found new route to server {}: {:?}", server_id, path);
+                }
+            } else {
+                warn!("No route found to server {}", server_id);
+            }
+        }
+
+        let message = self.message_to_send.as_mut().unwrap();
+        let prev_route = message.get_route();
+
+        // Check if the previous route in message to send contains the error node and update the route if necessary.
+        if prev_route.contains(&error_node) {
+            let dest_id = prev_route.last().unwrap();
+            let new_route = self.routes.get(dest_id);
+
+            match new_route {
+                Some(route) => {
+                    message.update_route(route.clone())
+                }
+                None => {
+                    message.update_route(Vec::new())
+                }
+            }
+        }
     }
 
     /// ###### Resends the last packet for a given session.
@@ -240,10 +297,16 @@ impl ChatClientDanylo {
         debug!("Resending last packet for session {}", session_id);
 
         let message = self.message_to_send.as_ref().unwrap();
-        let packet = message.get_fragment_packet(message.get_last_fragment_index()).unwrap();
+        let last_fragment_index = message.get_last_fragment_index();
+        let packet = message.get_fragment_packet(last_fragment_index).unwrap();
         match self.send_to_next_hop(packet) {
             Ok(_) => info!("Resent last fragment for session {}", session_id),
-            Err(err) => error!("Failed to resend last fragment for session {}: {}", session_id, err),
+            Err(err) => {
+                error!("Failed to resend last fragment for session {}: {}", session_id, err);
+                self.external_error = Some(
+                    format!("Failed to resend fragment {} for session {}: {}", last_fragment_index, session_id, err)
+                );
+            },
         }
     }
 
@@ -337,7 +400,7 @@ impl ChatClientDanylo {
     fn handle_response_error(&mut self, server_id: NodeId, error: String) {
         error!("Error received from server {}: {:?}", server_id, error);
 
-        self.external_error = Some(format!("Error received from server {}: {:?}", server_id, error));
+        self.external_error = Some(error);
     }
 
     /// ###### Waits for a response from the server.
@@ -360,7 +423,7 @@ impl ChatClientDanylo {
             }
 
             // Sleep for a short duration before checking again.
-            thread::sleep(Duration::from_millis(100));
+            thread::sleep(Duration::from_millis(10));
         }
 
         // Reset the response status and return success.
@@ -572,7 +635,7 @@ impl ChatClientDanylo {
                 info!("Discovery complete!");
                 return Ok(());
             }
-            thread::sleep(Duration::from_millis(100));
+            thread::sleep(Duration::from_millis(10));
         }
         Err("Discovery failed.".to_string())
     }
