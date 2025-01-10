@@ -35,7 +35,7 @@ use bagel_bomber::BagelBomber;
 use skylink::SkyLinkDrone;
 use RF_drone::RustAndFurious;
 use crate::clients::client_chen::ClientChen;
-use crate::clients::client_chen::ui_traits::Monitoring;
+use crate::ui_traits::Monitoring;
 use crate::clients::client_danylo::ChatClientDanylo;
 use crate::general_use::{ClientCommand, ClientId};
 use crate::servers::content;

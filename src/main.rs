@@ -7,11 +7,11 @@ mod general_use;
 mod ui;
 
 mod clients;
+pub mod ui_traits;
+
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
-use tokio::time;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 /*
 fn main() {

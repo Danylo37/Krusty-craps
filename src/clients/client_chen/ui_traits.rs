@@ -1,10 +1,6 @@
 use crate::clients::client_chen::prelude::*;
+use crate::ui_traits::Monitoring;
 use crate::clients::client_chen::{ClientChen, CommandHandler, FragmentsHandler, PacketsReceiver, Router, Sending};
-
-pub trait Monitoring{
-    fn run_with_monitoring(&mut self, sender_to_gui:Sender<String>);
-}
-
 impl Monitoring for ClientChen{
     fn run_with_monitoring(&mut self, sender_to_gui: Sender<String>) {
         loop {
