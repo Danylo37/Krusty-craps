@@ -1,9 +1,11 @@
-use eframe::{App, Frame};
-use eframe::egui::{CentralPanel, Context, Ui};
+use eframe::{
+    App,
+    Frame,
+    egui::{CentralPanel, Context, Ui}
+};
 use wg_2024::network::NodeId;
-use crate::clients::client_danylo::chat_gui::RequestType::{AskListClients, AskType, RegisterClient};
-use crate::clients::client_danylo::client_danylo::ChatClientDanylo;
 use crate::general_use::ServerType;
+use super::ChatClientDanylo;
 
 #[derive(PartialEq)]
 enum Menu {
@@ -49,9 +51,9 @@ impl App for ChatGUI<'_>  {
                 Menu::ContentServer => self.what_are_you_doing(ui),
                 Menu::UndefinedServer => self.undefined_server_menu(ui),
 
-                Menu::SendRequest(AskListClients) => self.ask_users_list(ui),
-                Menu::SendRequest(RegisterClient) => self.register_client(ui),
-                Menu::SendRequest(AskType) => self.ask_type(ui),
+                Menu::SendRequest(RequestType::AskListClients) => self.ask_users_list(ui),
+                Menu::SendRequest(RequestType::RegisterClient) => self.register_client(ui),
+                Menu::SendRequest(RequestType::AskType) => self.ask_type(ui),
 
                 Menu::ChooseUser => self.choose_user(ui),
                 Menu::SendMessageTo(id) => self.send_message(ui, id),
@@ -162,14 +164,14 @@ impl <'a> ChatGUI<'a> {
 
         if is_registered {
             if ui.button("Request client's list").clicked() {
-                self.current_menu = Menu::SendRequest(AskListClients);
+                self.current_menu = Menu::SendRequest(RequestType::AskListClients);
             }
             if ui.button("Send message").clicked() {
                 self.current_menu = Menu::ChooseUser;
             }
         } else {
             if ui.button("Register").clicked() {
-                self.current_menu = Menu::SendRequest(RegisterClient);
+                self.current_menu = Menu::SendRequest(RequestType::RegisterClient);
             }
         }
 
@@ -195,7 +197,7 @@ impl <'a> ChatGUI<'a> {
         ui.separator();
 
         if ui.button("Request server type").clicked() {
-            self.current_menu = Menu::SendRequest(AskType);
+            self.current_menu = Menu::SendRequest(RequestType::AskType);
         }
 
         ui.separator();

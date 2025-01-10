@@ -16,12 +16,9 @@ use wg_2024::{
 
 use crate::{
     general_use::{ClientCommand, ClientEvent, Message, Query, Response, ServerType},
-    clients::client::Client
+    clients::Client
 };
-use super::{
-    message_fragments::MessageFragments,
-    chat_gui::ChatGUI,
-};
+use super::{MessageFragments, ChatGUI};
 
 pub struct ChatClientDanylo {
     // ID

@@ -4,10 +4,10 @@ use crossbeam_channel::{unbounded, Sender};
 use wg_2024::{network::NodeId, packet::Packet};
 
 use crate::{
-    clients::client::Client,
+    clients::Client,
     general_use::ServerType,
 };
-use super::client_danylo::ChatClientDanylo;
+use super::ChatClientDanylo;
 
 pub fn test_gui() {
     let mut c1 = create_test_chat_client(1);
