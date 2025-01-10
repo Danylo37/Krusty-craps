@@ -82,7 +82,7 @@ fn take_user_input() -> String {
 fn use_clients(controller: &mut SimulationController) {
     println!("\nAvailable Clients:\n");
 
-    let clients_with_types = controller.get_list_clients_with_types();  // Get clients with types
+    let clients_with_types = controller.get_list_clients();  // Get clients with types
     if clients_with_types.is_empty() {
         println!("No clients registered.");
         return;
@@ -142,14 +142,14 @@ fn choose_action_client(client_type: ClientType, client_id: NodeId, controller: 
                 let user_choice = ask_input_user();
                 match user_choice {
                     1 => {
-                        //TODO
+                        println!("first choice");//TODO
                     }
 
                     2 => {
-                        //TODO
+                        println!("second choice");//TODO
                     }
                     3 => {
-                        //TODO
+                        println!("third choice");//TODO
                     }
 
                     4 => stay_inside = false,
@@ -171,7 +171,7 @@ fn ask_server_action(client_id: NodeId, controller: &mut SimulationController) {
 
         println!("\nAvailable Servers:\n");
 
-        let server_ids_types = controller.get_list_servers_with_types(); // Get servers with types
+        let server_ids_types = controller.get_list_servers(); // Get servers with types
         if server_ids_types.is_empty() {
             println!("No servers registered.");
             stay_inside = false; // Or return to previous menu
@@ -194,7 +194,7 @@ fn ask_server_action(client_id: NodeId, controller: &mut SimulationController) {
         if let Some((server_type, server_id)) = server_ids_types.get((user_choice - 1) as usize) { // Get server_type
 
             match controller.ask_which_type(client_id, *server_id) {
-                Ok(server_type) => println!("Server type is: {}", server_type),  // Use returned server_type
+                Ok(server_type) => println!("Server type is: {}", server_type),
                 Err(e) => println!("Error getting server type: {}", e),
             }
 
@@ -216,8 +216,8 @@ fn request_text_from_server(client_id: NodeId, server_list: &Vec<(ServerType, No
     let user_choice = ask_input_user();
 
     if let Some(&(_, server_id)) = server_list.get((user_choice - 1) as usize) {
-        if let Some(client_sender) = controller.command_senders_clients.get(&client_id) {
-            if let Err(e) = client_sender.send(ClientCommand::RequestText(server_id)) { // Correct command
+        if let Some((client_sender, _)) = controller.command_senders_clients.get(&client_id) {
+            if let Err(e) = client_sender.send(ClientCommand::RequestText(server_id)) {
                 eprintln!("Failed to send RequestText command: {:?}", e);
             }
         }
@@ -236,8 +236,8 @@ fn request_media_from_server(client_id: NodeId, server_list: &Vec<(ServerType, N
     let user_choice = ask_input_user();
 
     if let Some(&(_, server_id)) = server_list.get((user_choice - 1) as usize) {
-        if let Some(client_sender) = controller.command_senders_clients.get(&client_id) {
-            if let Err(e) = client_sender.send(ClientCommand::RequestMedia(server_id)) { // Correct command
+        if let Some((client_sender, _)) = controller.command_senders_clients.get(&client_id) {
+            if let Err(e) = client_sender.send(ClientCommand::RequestMedia(server_id)) {
                 eprintln!("Failed to send RequestMedia command: {:?}", e);
             }
         }
