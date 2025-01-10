@@ -193,7 +193,7 @@ pub trait Server{
         let mut data_to_add :Vec<u8> = fragment.data.to_vec();
         data_to_add.truncate(fragment.length as usize);
 
-        ///Fragment reassembly
+        //Fragment reassembly
         // Check if it exists already
         if let Some(reassembling_message) = self.get_reassembling_messages().get_mut(&session_id) {
 
