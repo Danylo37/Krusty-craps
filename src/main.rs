@@ -7,10 +7,50 @@ mod general_use;
 mod ui;
 
 mod clients;
-
+use serde::{Deserialize, Serialize};
+use std::time::Duration;
+use futures_util::{SinkExt, StreamExt};
+use tokio::sync::mpsc;
+use tokio::time;
+use tokio_tungstenite::{connect_async, tungstenite::Message};
+/*
 fn main() {
     let mut my_net = network_initializer::NetworkInitializer::new();
     my_net.initialize_from_file("input.toml");
+}*/
+
+#[tokio::main]
+async fn main() {
+    let url = "ws://localhost:8000";
+
+    println!("Connecting to {}", url);
+    let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
+    println!("Connected to WebSocket");
+
+    let (mut write, _) = ws_stream.split();
+
+    // Create a channel for communication between clients and WebSocket writer task
+    let (tx, mut rx) = mpsc::channel::<String>(100);
+
+    // Network initializer instance
+    let mut my_net = network_initializer::NetworkInitializer::new(tx);
+    my_net.initialize_from_file("input.toml");
+
+    // Spawn a task for writing messages to the WebSocket
+    tokio::spawn(async move {
+        while let Some(msg) = rx.recv().await {
+            if let Err(err) = write.send(Message::text(msg)).await {
+                eprintln!("Error writing to WebSocket: {:?}", err);
+                break;
+            }
+        }
+    });
+
+    // Create and spawn tasks for clients
+
+    // Keep the program running to simulate clients sending data
+    tokio::signal::ctrl_c().await.expect("Failed to listen for ctrl+c");
+    println!("Client program terminated.");
 }
 
 /*

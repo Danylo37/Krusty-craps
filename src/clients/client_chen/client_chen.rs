@@ -28,14 +28,6 @@ pub(crate) struct ClientChen {
     pub(crate) network_info: NetworkInfo,
 }
 
-#[derive(Debug)]
-pub enum ClientEvent {
-    PacketSent(Packet),
-    SenderRemoved(NodeId),
-    SenderAdded(NodeId),
-    DoingFlood(FloodId),
-    FloodIsFinished(FloodId),
-}
 impl TraitClient for ClientChen {
     fn new(
         id: NodeId,
@@ -114,7 +106,6 @@ impl TraitClient for ClientChen {
             }
         }
     }
-
 }
 
 // Metadata about the client

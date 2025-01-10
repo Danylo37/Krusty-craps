@@ -82,16 +82,20 @@ pub struct NetworkInitializer {
     server_channels: HashMap<NodeId, (Sender<Packet>, ServerType)>,
     drone_brand_usage: HashMap<DroneBrand, UsingTimes>,
     client_type_usage: HashMap<ClientType, UsingTimes>,
+    sender_to_gui: Sender<String>,
 }
 
 impl NetworkInitializer {
-    pub fn new() -> Self {
+    pub fn new(
+        sender_to_gui: Sender<String>
+    ) -> Self {
         Self {
             drone_channels: HashMap::new(),
             client_channels: HashMap::new(),
             server_channels: HashMap::new(),
             drone_brand_usage: DroneBrand::iter().map(|brand| (brand, 0)).collect(),
             client_type_usage: ClientType::iter().map(|client_type| (client_type, 0)).collect(),
+            sender_to_gui,
         }
     }
     pub fn initialize_from_file(&mut self, config_path: &str) {
@@ -218,7 +222,7 @@ impl NetworkInitializer {
             f32,
         ),
     ) where
-        T: TraitDrone + Send + 'static, // Ensure T implements the Drone trait and is Sendable
+        T: TraitDrone
     {
         let (drone_id, event_sender, cmd_receiver, pkt_receiver, pkt_senders, pdr) = drone_params;
 
@@ -348,7 +352,7 @@ impl NetworkInitializer {
             HashMap<NodeId, Sender<Packet>>,
         ),
     ) where
-        T: TraitClient + Send + 'static, // Ensure T implements the Client trait and is Sendable
+        T: TraitClient
     {
         let (client_id, event_sender, cmd_receiver, pkt_receiver, pkt_senders) = client_params;
 
@@ -379,11 +383,11 @@ impl NetworkInitializer {
                                          HashMap<NodeId, Sender<Packet>>,
                                      ),
     ) where
-        T: TraitClient + Monitoring +  Send + 'static, // Ensure T implements the Client trait and is Sendable
+        T: TraitClient + Monitoring
     {
         let (client_id, event_sender, cmd_receiver, pkt_receiver, pkt_senders) = client_params;
 
-        let client_instance = T::new(
+        let mut client_instance = T::new(
             client_id,
             pkt_senders,
             pkt_receiver,
@@ -392,10 +396,7 @@ impl NetworkInitializer {
         );
 
         thread::spawn(move || {
-            match client_instance {
-                Ok(mut client) => client.run_with_monitoring(sender_to_gui),
-                Err(e) => panic!("Failed to run client {}: {}", client_id, e),
-            }
+            client_instance.run();
         });
     }
 

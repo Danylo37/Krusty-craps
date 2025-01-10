@@ -1,3 +1,4 @@
+use serde::de::DeserializeOwned;
 use crate::clients::client_chen::{ClientChen, FragmentsHandler, PacketCreator, PacketsReceiver, Sending, SpecificInfo};
 use crate::clients::client_chen::prelude::*;
 use crate::clients::client_chen::general_client_traits::*;
@@ -30,7 +31,7 @@ impl FragmentsHandler for ClientChen{
             })
     }
 
-    fn handle_fragments_in_buffer_with_checking_status<T: Serialize + for<'de> Deserialize<'de>>(&mut self) {
+    fn handle_fragments_in_buffer_with_checking_status<T: Serialize + Deserialize>(&mut self) {
         // Aggregate session IDs and their corresponding fragment IDs
         let sessions: HashMap<SessionId, Vec<FragmentIndex>> = self
             .storage
@@ -112,7 +113,7 @@ impl FragmentsHandler for ClientChen{
         }
     }
 
-    fn reassemble_fragments_in_buffer<T: Serialize + for<'de> Deserialize<'de>>(&mut self) -> Result<T, String> {
+    fn reassemble_fragments_in_buffer<T: Serialize + for<'a> Deserialize<'a>>(&mut self) -> Result<T, String> {
         let mut keys: Vec<(SessionId, FragmentIndex)> = self
             .storage
             .fragment_assembling_buffer
