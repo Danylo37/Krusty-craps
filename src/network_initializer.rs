@@ -297,7 +297,7 @@ impl NetworkInitializer {
             );
 
             //To add random spawn for client, when random spawned we need to keep the type just spawned and insert it here
-            self.client_channels.insert(client_instance.id, (packet_sender , ClientType::Chat)));
+            self.client_channels.insert(client_instance.id, (packet_sender , ClientType::Chat));
 
             // Spawn a thread for each client
             thread::spawn(move || {
@@ -385,7 +385,7 @@ impl NetworkInitializer {
                 }
             };
 
-            self.server_channels.insert(server.id, (packet_sender, server_type);
+            self.server_channels.insert(server.id, (packet_sender, server_type));
 
             // Create and run server
             thread::spawn(move ||
