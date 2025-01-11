@@ -333,14 +333,7 @@ impl <'a> ChatGUI<'a> {
         ui.separator();
 
         ui.label("Starting discovery...");
-        match self.client.discovery() {
-            Ok(_) => {
-                ui.label("Discovery complete!");
-            }
-            Err(error) => {
-                ui.label(format!("Discovery failed: {}", error));
-            }
-        }
+        self.client.discovery();
 
         ui.separator();
         if ui.button("Back").clicked() {
