@@ -371,8 +371,13 @@ impl NetworkInitializer {
             cmd_receiver,
         );
 
-        thread::spawn(move || {
-            client_instance.run_with_monitoring(sender_to_gui);
+        //for the asynchronous running like clients and servers we can use the tokio and it
+        //is more efficient because you are using a single thread but multitasking, but for
+        //the drones we need to use the thread:spawn because they are running in synchronous so
+        //they are less efficient, infact they are running in multiple threads and in every thread
+        //they are not multitasking.
+        tokio::spawn(async move {
+            client_instance.run_with_monitoring(sender_to_gui).await;
         });
     }
 
@@ -468,6 +473,8 @@ impl NetworkInitializer {
                 }
             );
         }
+
+        ///Comment: when you are running the run_with_monitoring use the tokio:spawn
     }
 
 

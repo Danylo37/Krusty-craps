@@ -1,6 +1,7 @@
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::{HashMap};
 use std::fmt::Debug;
+use std::future::Future;
 use tokio::sync::mpsc;
 use wg_2024::{
     network::{NodeId},
@@ -75,7 +76,10 @@ impl TextServer{
 }
 
 impl Monitoring for TextServer {
-    async fn run_with_monitoring(&mut self, sender_to_gui: mpsc::Sender<Vec<u8>>) {
+    fn run_with_monitoring(
+        &mut self,
+        sender_to_gui: mpsc::Sender<Vec<u8>>,
+    ) -> impl Future<Output = ()> + Send {
         loop {
             select_biased! {
                 recv(self.get_from_controller_command()) -> command_res => {
