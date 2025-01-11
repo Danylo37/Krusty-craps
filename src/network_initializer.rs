@@ -313,7 +313,8 @@ impl NetworkInitializer {
             let mut client_type;
             match self.choose_client_type_evenly() {
                 ClientType::Web => {
-                    client_type = ClientType::Web;
+                    //To change in Web
+                    client_type = ClientType::Chat;
                     self.create_and_spawn_client::<ChatClientDanylo>(client_params);
                     self.client_channels.insert(client.id, (packet_sender , ClientType::Chat));
                 },
