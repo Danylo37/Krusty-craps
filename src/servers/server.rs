@@ -241,11 +241,9 @@ pub trait Server{
     fn if_all_fragments_received_process(&mut self, message: &Vec<u8>, current_fragment: &Fragment, session_id: u64, routing_header: SourceRoutingHeader) -> bool {
         // Message Processing
 
-        println!("Trying sending");
-        println!("Message length {} n_fragments {} current.fragment length {}, fragment_index: {}", message.len(), current_fragment.total_n_fragments, current_fragment.length, current_fragment.fragment_index );
+        info!("Message length {} n_fragments {} current.fragment length {}, fragment_index: {}", message.len(), current_fragment.total_n_fragments, current_fragment.length, current_fragment.fragment_index );
         if(message.len() as u64) == ((current_fragment.total_n_fragments-1)*128 + current_fragment.length as u64)
         {
-            println!("Sending back");
             let reassembled_data = message.clone(); // Take ownership of the data
             self.get_reassembling_messages().remove(&session_id); // Remove from map
             self.process_reassembled_message(reassembled_data, routing_header.hops[0]);
@@ -267,9 +265,11 @@ pub trait Server{
         //Storing the all the fragments to send
         self.get_sending_messages().insert(session_id, (response_in_vec_bytes.to_vec(), header.destination().unwrap()));
 
+        info!("Sending fragments n_fragments: {}", n_fragments);
         //Sending
         for i in 0..n_fragments{
 
+            info!("Sending fragment fragment: {}", i);
             //Preparing data of fragment
             let mut data:[u8;128] = [0;128];
             if(i+1)*128>response_in_vec_bytes.len(){
@@ -339,7 +339,8 @@ pub trait Server{
     
     //Common functions
     fn give_type_back(&mut self, src_id: NodeId){
-        println!("We did it");
+
+        info!("Sending back type back");
 
         //Get data
         let server_type = self.get_server_type();
@@ -363,6 +364,7 @@ pub trait Server{
         let session_id = self.generate_unique_session_id();
 
         //Send fragments
+        info!("Sending fragments");
         self.send_fragments(session_id, n_fragments, response_in_vec_bytes, header);
     }
 
