@@ -22,12 +22,9 @@ use crate::{
     servers::{communication_server::CommunicationServer, text_server::TextServer, media_server::MediaServer, server::Server as ServerTrait},
     simulation_controller::SimulationController,
     ui::start_ui};
-use crate::clients::client_danylo::ChatClientDanylo;
-use crate::general_use::{ClientCommand, ClientId};
-use crate::servers::content;
+
 
 //Drones
-use krusty_drone::KrustyCrapDrone;
 use rusty_drones::RustyDrone;
 use rolling_drone::RollingDrone;
 use rustable_drone::RustableDrone;
@@ -37,46 +34,42 @@ use fungi_drone::FungiDrone;
 use bagel_bomber::BagelBomber;
 use skylink::SkyLinkDrone;
 use RF_drone::RustAndFurious;
-//use bobry_w_locie::drone::BoberDrone;
-
-
-//UI
 use crate::ui_traits::Monitoring;
+use crate::clients::client_danylo::ChatClientDanylo;
+use crate::general_use::{ClientCommand, ClientId};
+use crate::servers::content;
+//use bobry_w_locie::drone::BoberDrone;
 
 
 //Drone Enum + iterator over it
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
 pub enum DroneBrand {
-    KrustyCrap,
-    RustBusters,
-    
-    /*RustyDrone,
+    RustyDrone,
     Rustable,
     BagelBomber,
     RustAndFurious,
     Fungi,
+    RustBusters,
     RustEze,
     SkyLink,
     RollingDrones,
-    // BobryWLucie,*/
+    // BobryWLucie,
 }
 
 impl DroneBrand {
     // Returns an iterator over all variants of DroneBrand
     pub fn iter() -> impl Iterator<Item = DroneBrand> {
         [
-            DroneBrand::KrustyCrap,
-            DroneBrand::RustBusters,
-
-            /*DroneBrand::Rustable,
+            DroneBrand::RustyDrone,
+            DroneBrand::Rustable,
             DroneBrand::BagelBomber,
             DroneBrand::RustAndFurious,
             DroneBrand::Fungi,
-            DroneBrand::RustyDrone,
+            DroneBrand::RustBusters,
             DroneBrand::RustEze,
             DroneBrand::SkyLink,
             DroneBrand::RollingDrones,
-            //DroneBrand::BobryWLucie,*/
+            //DroneBrand::BobryWLucie,
         ]
             .into_iter()
     }
@@ -147,6 +140,9 @@ impl NetworkInitializer {
         self.create_clients(config.client, &mut controller, client_event_sender, topology.clone());
         self.create_servers(config.server, &mut controller, server_event_sender, topology.clone());
 
+        //Connecting the network
+        self.connect_nodes(&mut controller, topology);
+
         // Start the user interface
         println!("Starting User Interface");
         start_ui(controller);
@@ -175,19 +171,6 @@ impl NetworkInitializer {
             // Clone sender for drone events
             let drone_events_sender_clone = drone_events_sender.clone();
 
-            // Gather connected nodes and their senders
-            let connected_nodes_ids = topology
-                .get(&drone.id)
-                .cloned()
-                .unwrap_or_default();
-
-            let connected_nodes_ids_set: HashSet<_> = connected_nodes_ids.into_iter().collect();
-
-            let packet_senders_collection: HashMap<_, _> = connected_nodes_ids_set
-                .iter()
-                .filter_map(|&node| self.get_sender_for_node(node).map(|sender| (node, sender.clone())))
-                .collect();
-
             // Prepare parameters array for the macro
 
             let drone_params = (
@@ -195,24 +178,22 @@ impl NetworkInitializer {
                 drone_events_sender_clone,
                 command_receiver,
                 packet_receiver,
-                packet_senders_collection,
+                HashMap::new(),
                 drone.pdr,
             );
 
             // Use helper function or macro (in this case function) to create and spawn drones based on their brand
             match self.choose_drone_brand_evenly() {
-                DroneBrand::Our => self.create_and_spawn_drone::<KrustyCrap>(controller, drone_params),
-                DroneBrand::RustBusters => self.create_and_spawn_drone::<RustBustersDrone>(controller, drone_params),
-                
-                /*DroneBrand::RollingDrones => self.create_and_spawn_drone::<RollingDrone>(controller, drone_params),
-                DroneBrand::Rustable => self.create_and_spawn_drone::<RustableDrone>(controller, drone_params),
                 DroneBrand::RustyDrone => self.create_and_spawn_drone::<RustyDrone>(controller, drone_params),
+                DroneBrand::RollingDrones => self.create_and_spawn_drone::<RollingDrone>(controller, drone_params),
+                DroneBrand::Rustable => self.create_and_spawn_drone::<RustableDrone>(controller, drone_params),
+                DroneBrand::RustBusters => self.create_and_spawn_drone::<RustBustersDrone>(controller, drone_params),
                 DroneBrand::RustEze => self.create_and_spawn_drone::<RustezeDrone>(controller, drone_params),
                 DroneBrand::Fungi => self.create_and_spawn_drone::<FungiDrone>(controller, drone_params),
                 DroneBrand::BagelBomber => self.create_and_spawn_drone::<BagelBomber>(controller, drone_params),
                 DroneBrand::SkyLink => self.create_and_spawn_drone::<SkyLinkDrone>(controller, drone_params),
                 DroneBrand::RustAndFurious => self.create_and_spawn_drone::<RustAndFurious>(controller, drone_params),
-                //DroneBrand::BobryWLucie => self.create_and_spawn_drone::<BoberDrone>(controller, drone_params),*/
+                //DroneBrand::BobryWLucie => self.create_and_spawn_drone::<BoberDrone>(controller, drone_params),
             }
         }
     }
@@ -289,31 +270,17 @@ impl NetworkInitializer {
             // Clone sender for client events
             let client_events_sender_clone = client_events_sender.clone();
 
-            // Gather connected nodes and their senders
-            let connected_nodes_ids = topology
-                .get(&client.id)
-                .cloned()
-                .unwrap_or_default();
-
-            let connected_nodes_ids_set: HashSet<_> = connected_nodes_ids.into_iter().collect();
-
-            let packet_senders_collection: HashMap<_, _> = connected_nodes_ids_set
-                .iter()
-                .filter_map(|&node| self.get_sender_for_node(node).map(|sender| (node, sender.clone())))
-                .collect();
-
             let client_params = (
                 client.id,
                 client_events_sender_clone,
                 command_receiver,
                 packet_receiver,
-                packet_senders_collection,
+                HashMap::new(),
                 );
 
             let mut client_type;
             match self.choose_client_type_evenly() {
                 ClientType::Web => {
-                    //To change in Web
                     client_type = ClientType::Chat;
                     self.create_and_spawn_client::<ChatClientDanylo>(client_params);
                     self.client_channels.insert(client.id, (packet_sender , ClientType::Chat));
@@ -429,19 +396,6 @@ impl NetworkInitializer {
             // Clone sender for server events
             let server_events_sender_clone = server_events_sender.clone();
 
-            // Gather connected nodes and their senders
-            let connected_nodes_ids = topology
-                .get(&server.id)
-                .cloned()
-                .unwrap_or_default();
-
-            let connected_nodes_ids_set: HashSet<_> = connected_nodes_ids.clone().into_iter().collect();
-
-            let packet_senders_collection: HashMap<_, _> = connected_nodes_ids_set
-                .iter()
-                .filter_map(|&node| self.get_sender_for_node(node).map(|sender| (node, sender.clone())))
-                .collect();
-
             //Choosing type
             let server_type;
             //Fast fix on many servers
@@ -457,7 +411,7 @@ impl NetworkInitializer {
                     server_events_sender_clone,
                     command_receiver,
                     packet_receiver,
-                    packet_senders_collection,
+                    HashMap::new(),
                 ));
 
             }else{
@@ -471,7 +425,7 @@ impl NetworkInitializer {
                         server_events_sender_clone,
                         command_receiver,
                         packet_receiver,
-                        packet_senders_collection,
+                        HashMap::new(),
                     ));
                 }else{
                     vec_files = content::choose_random_texts();
@@ -483,7 +437,7 @@ impl NetworkInitializer {
                         server_events_sender_clone,
                         command_receiver,
                         packet_receiver,
-                        packet_senders_collection,
+                        HashMap::new(),
                    ));
                 }
             };
@@ -565,10 +519,10 @@ impl NetworkInitializer {
         if self.drone_channels.contains_key(node_id) {
             return Some(NodeType::Drone);
         }
-        if self.drone_channels.contains_key(node_id) {
+        if self.client_channels.contains_key(node_id) {
             return Some(NodeType::Client);
         }
-        if self.drone_channels.contains_key(node_id) {
+        if self.server_channels.contains_key(node_id) {
             return Some(NodeType::Server);
         }
         None // Node type not found
