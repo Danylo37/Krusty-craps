@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use rand::random;
 
-const N_FILES: u8 = 6;
+const N_FILES: usize = 6;
 
 pub fn choose_random_texts() -> Vec<(u8, String)>{
     let trying_closures = |x:u8| {
@@ -12,7 +12,7 @@ pub fn choose_random_texts() -> Vec<(u8, String)>{
         }
     };
 
-    let n_files = trying_closures(random::<u8>()%N_FILES);
+    let n_files = trying_closures(random::<u8>()%(N_FILES as u8));
 
     let mut vec_files:Vec<(u8, String)> = Vec::new();
     if random::<u8>()%2 == 0{
