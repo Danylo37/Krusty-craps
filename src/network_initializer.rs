@@ -22,9 +22,12 @@ use crate::{
     servers::{communication_server::CommunicationServer, text_server::TextServer, media_server::MediaServer, server::Server as ServerTrait},
     simulation_controller::SimulationController,
     ui::start_ui};
-
+use crate::clients::client_danylo::ChatClientDanylo;
+use crate::general_use::{ClientCommand, ClientId};
+use crate::servers::content;
 
 //Drones
+use krusty_drone::KrustyCrapDrone;
 use rusty_drones::RustyDrone;
 use rolling_drone::RollingDrone;
 use rustable_drone::RustableDrone;
@@ -34,42 +37,46 @@ use fungi_drone::FungiDrone;
 use bagel_bomber::BagelBomber;
 use skylink::SkyLinkDrone;
 use RF_drone::RustAndFurious;
-use crate::ui_traits::Monitoring;
-use crate::clients::client_danylo::ChatClientDanylo;
-use crate::general_use::{ClientCommand, ClientId};
-use crate::servers::content;
 //use bobry_w_locie::drone::BoberDrone;
+
+
+//UI
+use crate::ui_traits::Monitoring;
 
 
 //Drone Enum + iterator over it
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
 pub enum DroneBrand {
-    RustyDrone,
+    KrustyCrap,
+    RustBusters,
+    
+    /*RustyDrone,
     Rustable,
     BagelBomber,
     RustAndFurious,
     Fungi,
-    RustBusters,
     RustEze,
     SkyLink,
     RollingDrones,
-    // BobryWLucie,
+    // BobryWLucie,*/
 }
 
 impl DroneBrand {
     // Returns an iterator over all variants of DroneBrand
     pub fn iter() -> impl Iterator<Item = DroneBrand> {
         [
-            DroneBrand::RustyDrone,
-            DroneBrand::Rustable,
+            DroneBrand::KrustyCrap,
+            DroneBrand::RustBusters,
+
+            /*DroneBrand::Rustable,
             DroneBrand::BagelBomber,
             DroneBrand::RustAndFurious,
             DroneBrand::Fungi,
-            DroneBrand::RustBusters,
+            DroneBrand::RustyDrone,
             DroneBrand::RustEze,
             DroneBrand::SkyLink,
             DroneBrand::RollingDrones,
-            //DroneBrand::BobryWLucie,
+            //DroneBrand::BobryWLucie,*/
         ]
             .into_iter()
     }
@@ -194,16 +201,18 @@ impl NetworkInitializer {
 
             // Use helper function or macro (in this case function) to create and spawn drones based on their brand
             match self.choose_drone_brand_evenly() {
-                DroneBrand::RustyDrone => self.create_and_spawn_drone::<RustyDrone>(controller, drone_params),
-                DroneBrand::RollingDrones => self.create_and_spawn_drone::<RollingDrone>(controller, drone_params),
-                DroneBrand::Rustable => self.create_and_spawn_drone::<RustableDrone>(controller, drone_params),
+                DroneBrand::Our => self.create_and_spawn_drone::<KrustyCrap>(controller, drone_params),
                 DroneBrand::RustBusters => self.create_and_spawn_drone::<RustBustersDrone>(controller, drone_params),
+                
+                /*DroneBrand::RollingDrones => self.create_and_spawn_drone::<RollingDrone>(controller, drone_params),
+                DroneBrand::Rustable => self.create_and_spawn_drone::<RustableDrone>(controller, drone_params),
+                DroneBrand::RustyDrone => self.create_and_spawn_drone::<RustyDrone>(controller, drone_params),
                 DroneBrand::RustEze => self.create_and_spawn_drone::<RustezeDrone>(controller, drone_params),
                 DroneBrand::Fungi => self.create_and_spawn_drone::<FungiDrone>(controller, drone_params),
                 DroneBrand::BagelBomber => self.create_and_spawn_drone::<BagelBomber>(controller, drone_params),
                 DroneBrand::SkyLink => self.create_and_spawn_drone::<SkyLinkDrone>(controller, drone_params),
                 DroneBrand::RustAndFurious => self.create_and_spawn_drone::<RustAndFurious>(controller, drone_params),
-                //DroneBrand::BobryWLucie => self.create_and_spawn_drone::<BoberDrone>(controller, drone_params),
+                //DroneBrand::BobryWLucie => self.create_and_spawn_drone::<BoberDrone>(controller, drone_params),*/
             }
         }
     }
