@@ -1,7 +1,8 @@
 //I am a god
 
-use crossbeam_channel::{Receiver, Sender};
+use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::{HashMap};
+use log::info;
 use wg_2024::{
     network::{NodeId, SourceRoutingHeader},
     packet::{
@@ -32,7 +33,7 @@ pub trait Server{
     fn get_reassembling_messages(&mut self) -> &mut HashMap<u64, Vec<u8>>;
     fn get_sending_messages(&mut self) -> &mut HashMap<u64, (Vec<u8>, u8)>;
     fn get_sending_messages_not_mutable(&self) -> &HashMap<u64, (Vec<u8>, u8)>;
-    
+
     fn run(&mut self) {
         loop {
             select_biased! {
@@ -41,7 +42,7 @@ pub trait Server{
                         match command {
                             ServerCommand::AddSender(id, sender) => {
                                 self.get_packet_send().insert(id, sender);
-    
+
                             }
                             ServerCommand::RemoveSender(id) => {
                                 self.get_packet_send().remove(&id);
@@ -63,7 +64,7 @@ pub trait Server{
             }
         }
     }
-    
+
     //FLOOD
     fn discover(&mut self) {
 
@@ -103,8 +104,11 @@ pub trait Server{
         flood_request.increment(self.get_id(), NodeType::Server);
 
         //Creating and sending flood response
-        let response = flood_request.generate_response(session_id);
-        self.send_packet(response);
+        let mut response = flood_request.generate_response(session_id);
+        response.routing_header.increase_hop_index();
+        self.send_packet(response.clone());
+
+        info!("Handling flood request {:?}", response);
     }
 
     fn handle_flood_response(&mut self, flood_response: FloodResponse) {
@@ -187,6 +191,8 @@ pub trait Server{
             self.send_nack(nack, routing_header.get_reversed(), session_id);
             return;
         }
+
+        info!("Handling Fragment {:?}", fragment);
 
         //Getting vec of data from fragment
         let mut data_to_add :Vec<u8> = fragment.data.to_vec();
@@ -327,7 +333,6 @@ pub trait Server{
             Self::create_source_routing(route),
             session_id,
         );
-
         self.send_packet(packet);
 
     }
@@ -352,7 +357,7 @@ pub trait Server{
 
         //Generating header
         let route = self.find_path_to(src_id);
-        let header = Self::create_source_routing(route); //To fill
+        let header = Self::create_source_routing(route);
 
         // Generating ids
         let session_id = self.generate_unique_session_id();
