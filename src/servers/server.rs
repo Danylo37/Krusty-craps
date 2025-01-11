@@ -32,7 +32,38 @@ pub trait Server{
     fn get_reassembling_messages(&mut self) -> &mut HashMap<u64, Vec<u8>>;
     fn get_sending_messages(&mut self) -> &mut HashMap<u64, (Vec<u8>, u8)>;
     fn get_sending_messages_not_mutable(&self) -> &HashMap<u64, (Vec<u8>, u8)>;
-
+    
+    fn run(&mut self) {
+        loop {
+            select_biased! {
+                recv(self.get_from_controller_command()) -> command_res => {
+                    if let Ok(command) = command_res {
+                        match command {
+                            ServerCommand::AddSender(id, sender) => {
+                                self.get_packet_send().insert(id, sender);
+    
+                            }
+                            ServerCommand::RemoveSender(id) => {
+                                self.get_packet_send().remove(&id);
+                            }
+                        }
+                    }
+                },
+                recv(self.get_packet_recv()) -> packet_res => {
+                    if let Ok(packet) = packet_res {
+                        match packet.pack_type {
+                            PacketType::Nack(nack) => self.handle_nack(nack, packet.session_id),
+                            PacketType::Ack(ack) => self.handle_ack(ack),
+                            PacketType::MsgFragment(fragment) => self.handle_fragment(fragment, packet.routing_header ,packet.session_id),
+                            PacketType::FloodRequest(flood_request) => self.handle_flood_request(flood_request, packet.session_id),
+                            PacketType::FloodResponse(flood_response) => self.handle_flood_response(flood_response),
+                        }
+                    }
+                },
+            }
+        }
+    }
+    
     //FLOOD
     fn discover(&mut self) {
 
