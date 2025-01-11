@@ -649,6 +649,7 @@ impl ChatClientDanylo {
         // Create message (split the message into fragments) and send first fragment.
         let mut message = MessageFragments::new(session_id, hops);
         if message.create_message_of(data) {
+            self.message_to_send = Some(message.clone());
             self.send_to_next_hop(message.get_fragment_packet(0).unwrap())
         } else {
             Err("Failed to create message.".to_string())
