@@ -1,6 +1,5 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
-    time::{Duration, Instant},
     fmt::Debug,
     thread,
 };
@@ -52,7 +51,6 @@ pub struct ChatClientDanylo {
 
     // Response statuses
     response_received: bool,                                // Status of the last sent query
-    last_response_time: Option<Instant>,                    // Time of the last response
     external_error: Option<String>,                         // Error message from server/drone
 }
 
@@ -81,7 +79,6 @@ impl Client for ChatClientDanylo {
             fragments_to_reassemble: HashMap::new(),
             inbox: Vec::new(),
             response_received: false,
-            last_response_time: None,
             external_error: None,
         }
     }
@@ -143,26 +140,10 @@ impl ChatClientDanylo {
             }
             // -------------- for tests -------------- \\
             ClientCommand::StartFlooding => {
-                info!("Starting flooding");
-                match self.discovery() {
-                    Ok(_) => {
-                        println!("Discovery complete!");
-                    }
-                    Err(error) => {
-                        println!("Discovery failed: {}", error);
-                    }
-                };
+                self.discovery();
             }
             ClientCommand::AskTypeTo(server_id) => {
-                info!("Requesting server type for server {}", server_id);
-                match self.request_server_type(server_id) {
-                    Ok(_) => {
-                        println!("Server type is: {}", self.servers.get(&server_id).unwrap());
-                    }
-                    Err(error) => {
-                        println!("Failed to get server type: {}", error);
-                    }
-                };
+                self.request_server_type(server_id);
             }
             // -------------- for tests -------------- \\
             _ => {}
@@ -400,38 +381,14 @@ impl ChatClientDanylo {
         self.external_error = Some(error);
     }
 
-    /// ###### Waits for a response from the server.
-    /// This function waits for a response from the server within a specified timeout period.
-    /// If an external error is encountered or the timeout is reached, it returns an error.
-    /// Otherwise, it resets the response status and returns `Ok(())`.
-    fn wait_response(&mut self) -> Result<(), String> {
-        let timeout = Duration::from_secs(1);
-        let start_time = Instant::now();
-
-        while !self.response_received {
-            // Check for any external error and return it if found.
-            if let Some(error) = self.external_error.take() {
-                return Err(error);
-            }
-
-            // Check if the timeout has been reached.
-            if start_time.elapsed() > timeout {
-                return Err("Timeout waiting for server response".to_string());
-            }
-
-            // Sleep for a short duration before checking again.
-            thread::sleep(Duration::from_millis(10));
-        }
-
-        // Reset the response status and return success.
-        self.response_received = false;
-        Ok(())
-    }
-
     /// ###### Sends an acknowledgment (ACK) for a received fragment.
     /// Creates an ACK packet and sends it to the next hop.
     /// Logs the success or failure of the send operation.
-    fn send_ack(&mut self, fragment_index: u64, session_id: u64, routing_header: SourceRoutingHeader) {
+    fn send_ack(&mut self, fragment_index: u64, session_id: u64, mut routing_header: SourceRoutingHeader) {
+        // Reverse the routing header and reset the hop index.
+        routing_header.reverse();
+        routing_header.reset_hop_index();
+
         let ack = Packet::new_ack(routing_header, session_id, fragment_index);
 
         // Attempt to send the ACK packet to the next hop.
@@ -468,8 +425,6 @@ impl ChatClientDanylo {
     /// If the packet is successfully sent, it returns `Ok(())`.
     /// If an error occurs during the send operation, it returns an error message.
     fn send_to_next_hop(&mut self, mut packet: Packet) -> Result<(), String> {
-        debug!("Sending packet to next hop: {:?}", packet);
-
         // Attempt to retrieve the next hop ID from the routing header.
         // If it is missing, return an error as there is no valid destination to send the packet to.
         let Some(next_hop_id) = packet.routing_header.next_hop() else {
@@ -484,32 +439,18 @@ impl ChatClientDanylo {
         // Increment the hop index in the routing header.
         packet.routing_header.increase_hop_index();
 
+        debug!("Sending packet to next hop: {:?}", packet);
         // Attempt to send the packet to the next hop.
         if sender.send(packet.clone()).is_err() {
             return Err("Error sending packet to next hop.".to_string());
+        } else {
+            info!("Packet sent to next hop: {}", next_hop_id);
         }
 
         // Send the 'PacketSent' event to the simulation controller
         self.send_event(ClientEvent::PacketSent(packet));
 
         Ok(())
-    }
-
-    /// ###### Sends the packet to the next hop and waits for a response.
-    ///
-    /// Attempts to send the packet to the next hop using the `send_to_next_hop` method.
-    /// If the packet is successfully sent, it waits for a response from the server.
-    fn send_to_next_hop_and_wait_response(&mut self, packet: Packet) -> Result<(), String> {
-        match self.send_to_next_hop(packet) {
-            Ok(_) => {
-                // Wait for the response to the packet.
-                debug!("Waiting for response to packet.");
-                self.wait_response()
-            }
-            Err(err) => {
-                Err(err)
-            }
-        }
     }
 
     /// ###### Handles the flood response by updating routes and topology.
@@ -525,7 +466,6 @@ impl ChatClientDanylo {
         self.update_routes_and_servers(path);
         self.update_topology(path);
 
-        self.last_response_time = Some(Instant::now());
     }
 
     /// ###### Updates the routes and servers based on the provided path.
@@ -575,7 +515,7 @@ impl ChatClientDanylo {
 
     /// ###### Initiates the discovery process to find available servers and clients.
     /// Clears current data structures and sends a flood request to all neighbors.
-    pub fn discovery(&mut self) -> Result<(), String> {
+    pub fn discovery(&mut self) {
         info!("Starting discovery process");
 
         // Clear all current data structures related to topology.
@@ -608,47 +548,13 @@ impl ChatClientDanylo {
         for sender in &self.packet_send {
             if let Err(_) = sender.1.send(packet.clone()) {
                 error!("Failed to send FloodRequest to the drone with id {}.", sender.0);
-                return Err(format!("Failed to send FloodRequest to the drone with id {}.", sender.0));
+            } else {
+                info!("FloodRequest sent to the drone with id {}.", sender.0);
             }
 
             // Send the 'PacketSent' event to the simulation controller
             self.send_event(ClientEvent::PacketSent(packet.clone()));
         }
-
-        // Wait for the discovery process to complete.
-        self.last_response_time = Some(Instant::now());
-        let result = self.wait_discovery_end(Duration::from_secs(1));
-
-        self.update_servers();
-
-        result
-    }
-
-    /// ###### Waits for the discovery process to complete within a specified timeout period.
-    /// Returns an error if the timeout is reached.
-    fn wait_discovery_end(&mut self, timeout: Duration) -> Result<(), String> {
-        while let Some(last_response) = self.last_response_time {
-            if Instant::now().duration_since(last_response) > timeout {
-                info!("Discovery complete!");
-                return Ok(());
-            }
-            thread::sleep(Duration::from_millis(10));
-        }
-        Err("Discovery failed.".to_string())
-    }
-
-    /// ###### Updates the list of servers based on the current topology.
-    /// Removes servers that are not present in the topology.
-    fn update_servers(&mut self) {
-        let servers_to_remove: Vec<NodeId> = self.servers.keys()
-            .filter(|&server| !self.topology.contains_key(server))
-            .cloned()
-            .collect();
-
-        for server in servers_to_remove {
-            self.servers.remove(&server);
-        }
-        info!("Updated list of servers: {:?}", self.servers);
     }
 
     /// ###### Requests the type of specified server.
@@ -743,7 +649,7 @@ impl ChatClientDanylo {
         // Create message (split the message into fragments) and send first fragment.
         let mut message = MessageFragments::new(session_id, hops);
         if message.create_message_of(data) {
-            self.send_to_next_hop_and_wait_response(message.get_fragment_packet(0).unwrap())
+            self.send_to_next_hop(message.get_fragment_packet(0).unwrap())
         } else {
             Err("Failed to create message.".to_string())
         }
