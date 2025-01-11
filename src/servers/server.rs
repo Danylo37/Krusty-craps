@@ -9,7 +9,7 @@ use wg_2024::{
         Ack, FloodRequest, FloodResponse, Fragment, Nack, NackType, NodeType, Packet, PacketType,
     },
 };
-use crate::general_use::{FloodId, Message, ServerCommand, ServerType};
+use crate::general_use::{FloodId, Message, Response ,ServerCommand, ServerType};
 
 
 ///SERVER TRAIT
