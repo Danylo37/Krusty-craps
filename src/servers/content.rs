@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use rand::random;
 
+const N_FILES: u8 = 6;
+
 pub fn choose_random_texts() -> Vec<(u8, String)>{
     let trying_closures = |x:u8| {
         if x < 4 {
@@ -10,7 +12,7 @@ pub fn choose_random_texts() -> Vec<(u8, String)>{
         }
     };
 
-    let n_files = trying_closures(random::<u8>()%10);
+    let n_files = trying_closures(random::<u8>()%N_FILES);
 
     let mut vec_files:Vec<(u8, String)> = Vec::new();
     if random::<u8>()%2 == 0{
@@ -39,7 +41,7 @@ pub fn get_media(vec_files: Vec<(u8, String)>) -> HashMap<String, String>{
 }
 
 
-pub const TEXT: [&str; 6] = [
+pub const TEXT: [&str; N_FILES] = [
 
     //1
     r#"Alcuni versi di Leopardi:
