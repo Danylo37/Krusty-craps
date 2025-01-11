@@ -9,7 +9,7 @@ use wg_2024::{
         Ack, FloodRequest, FloodResponse, Fragment, Nack, NackType, NodeType, Packet, PacketType,
     },
 };
-use crate::general_use::{FloodId, Message, ServerCommand, ServerType};
+use crate::general_use::{FloodId, Message, Response ,ServerCommand, ServerType};
 
 
 ///SERVER TRAIT
@@ -343,10 +343,10 @@ pub trait Server{
         info!("Sending back type back");
 
         //Get data
-        let server_type = self.get_server_type();
+        let response = Response::ServerType(self.get_server_type());
 
         //Serializing type
-        let response_as_string = serde_json::to_string(&server_type).unwrap();
+        let response_as_string = serde_json::to_string(&response).unwrap();
         let response_in_vec_bytes = response_as_string.as_bytes();
         let length_response = response_in_vec_bytes.len();
 
