@@ -1,11 +1,12 @@
 use crate::clients::client_chen::prelude::*;
-use crate::ui_traits::Monitoring;
+use crate::ui_traits::{crossbeam_to_tokio_bridge, Monitoring};
 use crate::clients::client_chen::{ClientChen, CommandHandler, FragmentsHandler, PacketsReceiver, Router, Sending};
-use tokio::sync::mpsc;
 use rmp_serde::encode::to_vec;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
+use tokio::select;
+use tokio::sync::mpsc;
 
 #[derive(Debug, Serialize)]
 pub struct DisplayData {
@@ -20,32 +21,48 @@ pub struct DisplayData {
     message_chat: HashMap<ClientId, Vec<(Speaker, Message)>>,
 }
 
+
 impl Monitoring for ClientChen {
     fn run_with_monitoring(
         &mut self,
         sender_to_gui: mpsc::Sender<Vec<u8>>,
     ) -> impl Future<Output = ()> + Send {
-        // Move the async block into a function that returns the Future
         async move {
+            // Create tokio mpsc channels for receiving controller commands and packets
+            let (controller_tokio_tx, mut controller_tokio_rx) = mpsc::channel(32);
+            let (packet_tokio_tx, mut packet_tokio_rx) = mpsc::channel(32);
+
+            // Spawn the bridge function for controller commands
+            let controller_crossbeam_rx = self.communication_tools.controller_recv.clone();
+            tokio::spawn(crossbeam_to_tokio_bridge(controller_crossbeam_rx, controller_tokio_tx));
+
+            // Spawn the bridge function for incoming packets
+            let packet_crossbeam_rx = self.communication_tools.packet_recv.clone();
+            tokio::spawn(crossbeam_to_tokio_bridge(packet_crossbeam_rx, packet_tokio_tx));
+
             loop {
-                select_biased! {
-                    recv(self.communication_tools.controller_recv) -> command_res => {
-                        if let Ok(command) = command_res {
+                select! {
+                    // Handle controller commands from the tokio mpsc channel
+                    command_res = controller_tokio_rx.recv() => {
+                        if let Some(command) = command_res {
                             self.handle_controller_command(command);
                         } else {
                             eprintln!("Error receiving controller command");
                         }
                     },
-                    recv(self.communication_tools.packet_recv) -> packet_res => {
-                        if let Ok(packet) = packet_res {
+                    // Handle incoming packets from the tokio mpsc channel
+                    packet_res = packet_tokio_rx.recv() => {
+                        if let Some(packet) = packet_res {
                             self.handle_received_packet(packet);
                         } else {
                             eprintln!("Error receiving packet");
                         }
                     },
-                    default(std::time::Duration::from_millis(10)) => {
+                    // Handle periodic tasks
+                    _ = tokio::time::sleep(std::time::Duration::from_millis(10)) => {
+                        // Handle fragments and send packets
                         self.handle_fragments_in_buffer_with_checking_status();
-                        self.send_packets_in_buffer_with_checking_status();
+                        self.send_packets_in_buffer_with_checking_status(); // This can use crossbeam's send directly
                         self.update_routing_checking_status();
 
                         // Transform the routing table

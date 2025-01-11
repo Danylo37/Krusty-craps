@@ -3,6 +3,9 @@ use std::{
     collections::{HashMap, HashSet},
     env, fs, thread,
 };
+use tokio::sync::Mutex;
+use std::sync::Arc;
+
 use crossbeam_channel::*;
 use rand::prelude::*;
 use tokio::sync::mpsc;
@@ -34,6 +37,8 @@ use fungi_drone::FungiDrone;
 use bagel_bomber::BagelBomber;
 use skylink::SkyLinkDrone;
 use RF_drone::RustAndFurious;
+use crate::clients::client_chen::ClientChen;
+use crate::clients::client_chen::web_browser_client_traits::WebBrowserClientTrait;
 use crate::ui_traits::Monitoring;
 use crate::clients::client_danylo::ChatClientDanylo;
 use crate::general_use::{ClientCommand, ClientId};
@@ -282,8 +287,8 @@ impl NetworkInitializer {
             match self.choose_client_type_evenly() {
                 ClientType::Web => {
                     client_type = ClientType::Chat;
-                    self.create_and_spawn_client::<ChatClientDanylo>(client_params);
-                    self.client_channels.insert(client.id, (packet_sender , ClientType::Chat));
+                    self.create_and_spawn_client_with_monitoring::<ClientChen>(self.sender_to_gui.clone(), client_params);
+                    self.client_channels.insert(client.id, (packet_sender , ClientType::Web));
                 },
 
                 ClientType::Chat=> {
@@ -348,22 +353,20 @@ impl NetworkInitializer {
         });
     }
 
-    fn create_and_spawn_client_with_monitoring<T>(   //with gui monitoring
-                                     &mut self,
-                                     sender_to_gui: mpsc::Sender<Vec<u8>>,
-                                     client_params: (
-                                         ClientId,
-                                         Sender<ClientEvent>,
-                                         Receiver<ClientCommand>,
-                                         Receiver<Packet>,
-                                         HashMap<NodeId, Sender<Packet>>,
-                                     ),
-    ) where
-        T: TraitClient + Monitoring +  Send + 'static, // Ensure T implements the Client trait and is Sendable
-    {
+    fn create_and_spawn_client_with_monitoring<T: TraitClient + Monitoring + Send + 'static>(
+        &mut self,
+        sender_to_gui: mpsc::Sender<Vec<u8>>,
+        client_params: (
+            ClientId,
+            Sender<ClientEvent>,
+            Receiver<ClientCommand>,
+            Receiver<Packet>,
+            HashMap<NodeId, Sender<Packet>>,
+        ),
+    ) {
         let (client_id, event_sender, cmd_receiver, pkt_receiver, pkt_senders) = client_params;
 
-        let mut client_instance = T::new(
+        let client_instance = T::new(
             client_id,
             pkt_senders,
             pkt_receiver,
@@ -371,13 +374,12 @@ impl NetworkInitializer {
             cmd_receiver,
         );
 
-        //for the asynchronous running like clients and servers we can use the tokio and it
-        //is more efficient because you are using a single thread but multitasking, but for
-        //the drones we need to use the thread:spawn because they are running in synchronous so
-        //they are less efficient, infact they are running in multiple threads and in every thread
-        //they are not multitasking.
+        // Wrap `client_instance` in `Arc<Mutex<T>>` (using tokio::sync::Mutex)
+        let client_instance = Arc::new(Mutex::new(client_instance));
+
         tokio::spawn(async move {
-            client_instance.run_with_monitoring(sender_to_gui).await;
+            let mut client_guard = client_instance.lock().await; // Now this can be awaited
+            client_guard.run_with_monitoring(sender_to_gui).await;
         });
     }
 
@@ -474,7 +476,7 @@ impl NetworkInitializer {
             );
         }
 
-        ///Comment: when you are running the run_with_monitoring use the tokio:spawn
+        //Comment: when you are running the run_with_monitoring use the tokio:spawn
     }
 
 

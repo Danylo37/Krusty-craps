@@ -2,7 +2,7 @@ use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::{HashMap};
 use std::fmt::Debug;
 use std::future::Future;
-use tokio::sync::mpsc;
+use tokio::select;
 use wg_2024::{
     network::{NodeId},
     packet::{
@@ -10,8 +10,10 @@ use wg_2024::{
         PacketType,
     },
 };
+use tokio::sync::mpsc;
 use crate::general_use::{Query, Response, ServerCommand, ServerEvent, ServerType};
-use crate::ui_traits::Monitoring;
+use crate::servers::text_server::TextServer;
+use crate::ui_traits::{crossbeam_to_tokio_bridge, Monitoring};
 use super::server::MediaServer as CharTrait;
 use super::server::Server as MainTrait;
 
@@ -79,36 +81,55 @@ impl Monitoring for MediaServer {
     fn run_with_monitoring(
         &mut self,
         sender_to_gui: mpsc::Sender<Vec<u8>>,
-    ) -> impl Future<Output = ()> + Send{
-        loop {
-            select_biased! {
-                recv(self.get_from_controller_command()) -> command_res => {
-                    if let Ok(command) = command_res {
-                        match command {
-                            ServerCommand::AddSender(id, sender) => {
-                                self.get_packet_send().insert(id, sender);
+    ) -> impl Future<Output = ()> + Send {
+        async move {
+            // Create tokio mpsc channels for receiving controller commands and packets
+            let (controller_tokio_tx, mut controller_tokio_rx) = mpsc::channel(32);
+            let (packet_tokio_tx, mut packet_tokio_rx) = mpsc::channel(32);
 
+            // Spawn the bridge function for controller commands
+            let controller_crossbeam_rx = self.from_controller_command.clone();
+            tokio::spawn(crossbeam_to_tokio_bridge(controller_crossbeam_rx, controller_tokio_tx));
+
+            // Spawn the bridge function for incoming packets
+            let packet_crossbeam_rx = self.packet_recv.clone();
+            tokio::spawn(crossbeam_to_tokio_bridge(packet_crossbeam_rx, packet_tokio_tx));
+
+            loop {
+                select! {
+                    // Handle controller commands from the tokio mpsc channel
+                    command_res = controller_tokio_rx.recv() => {
+                        if let Some(command) = command_res {
+                            match command {
+                                ServerCommand::AddSender(id, sender) => {
+                                    self.packet_send.insert(id, sender);
+                                }
+                                ServerCommand::RemoveSender(id) => {
+                                    self.packet_send.remove(&id);
+                                }
                             }
-                            ServerCommand::RemoveSender(id) => {
-                                self.get_packet_send().remove(&id);
+                        } else {
+                            eprintln!("Error receiving controller command");
+                        }
+                    },
+                    // Handle incoming packets from the tokio mpsc channel
+                    packet_res = packet_tokio_rx.recv() => {
+                        if let Some(packet) = packet_res {
+                            match packet.pack_type {
+                                PacketType::MsgFragment(fragment) => {
+                                    self.handle_fragment(fragment, packet.routing_header, packet.session_id);
+                                }
+                                _ => {}
                             }
+                        } else {
+                            eprintln!("Error receiving packet");
                         }
-                    }
-                },
-                recv(self.get_packet_recv()) -> packet_res => {
-                    if let Ok(packet) = packet_res {
-                        match packet.pack_type {
-                            PacketType::Nack(nack) => self.handle_nack(nack, packet.session_id),
-                            PacketType::Ack(ack) => self.handle_ack(ack),
-                            PacketType::MsgFragment(fragment) => self.handle_fragment(fragment, packet.routing_header ,packet.session_id),
-                            PacketType::FloodRequest(flood_request) => self.handle_flood_request(flood_request, packet.session_id),
-                            PacketType::FloodResponse(flood_response) => self.handle_flood_response(flood_response),
-                        }
-                    }
-                },
-                default(std::time::Duration::from_millis(10)) => {
-                    //todo!
-                 },
+                    },
+                    // Handle periodic tasks
+                    _ = tokio::time::sleep(std::time::Duration::from_millis(10)) => {
+                        // Perform periodic tasks here
+                    },
+                }
             }
         }
     }
