@@ -5,6 +5,7 @@ use wg_2024::{
     packet::{Fragment, Packet, PacketType},
 };
 
+#[derive(Clone)]
 /// ###### Represents a message that is fragmented into smaller pieces for transmission.
 pub struct MessageFragments {
     fragments: Vec<Fragment>,
