@@ -36,13 +36,12 @@ impl FloodingPacketsHandler for ClientChen {
     /// When you receive a flood response, you need first to update the topology with the elements of the path_traces
     /// everyone's connected_node_ids (using the hashset's methods).
     fn handle_flood_response(&mut self, packet: Packet, response: FloodResponse) {
-
         if response.flood_id != self.status.flood_id{
             return;
         }
         // Insert the packet into the input_packet_disk with session_id as key
         self.storage.input_packet_disk.insert((packet.session_id, 0), packet);
-        self.storage.irresolute_path_traces.insert(response.path_trace.clone());
+        self.storage.irresolute_path_traces.insert(response.path_trace.last().unwrap().0 , response.path_trace.clone());
 
         // Update the network topology and connect nodes in the path trace
         let mut path_iter = response.path_trace.iter().peekable();
@@ -57,7 +56,6 @@ impl FloodingPacketsHandler for ClientChen {
                 match node_type {
                     NodeType::Server => NodeInfo {
                         node_id,
-                        node_type,
                         specific_info: SpecificInfo::ServerInfo(ServerInformation {
                             server_type: ServerType::Undefined,
                             connected_nodes_ids: HashSet::new(),
@@ -65,14 +63,12 @@ impl FloodingPacketsHandler for ClientChen {
                     },
                     NodeType::Client => NodeInfo {
                         node_id,
-                        node_type,
                         specific_info: SpecificInfo::ClientInfo(ClientInformation {
                             connected_nodes_ids: HashSet::new(),
                         }),
                     },
                     NodeType::Drone => NodeInfo {
                         node_id,
-                        node_type,
                         specific_info: SpecificInfo::DroneInfo(DroneInformation {
                             connected_nodes_ids: HashSet::new(),
                             //drone_brand: DroneBrand::Undefined,

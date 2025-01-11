@@ -11,13 +11,10 @@ pub mod ui_traits;
 
 use serde::{Deserialize, Serialize};
 use futures_util::{SinkExt, StreamExt};
-use tokio::sync::mpsc;
+use crossbeam_channel;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
-/*
-fn main() {
-    let mut my_net = network_initializer::NetworkInitializer::new();
-    my_net.initialize_from_file("input.toml");
-}*/
+use tokio::sync::mpsc;
+
 
 #[tokio::main]
 async fn main() {
@@ -29,30 +26,28 @@ async fn main() {
 
     let (mut write, _) = ws_stream.split();
 
-    // Create a channel for communication between clients and WebSocket writer task
-    let (tx, mut rx) = mpsc::channel::<String>(100);
+    // Create an asynchronous channel for communication between clients and WebSocket writer task
+    let (tx, mut rx) = mpsc::channel::<Vec<u8>>(1000);
 
     // Network initializer instance
-    let mut my_net = network_initializer::NetworkInitializer::new(tx);
+    let mut my_net = network_initializer::NetworkInitializer::new(tx.clone());
     my_net.initialize_from_file("input.toml");
 
     // Spawn a task for writing messages to the WebSocket
     tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
-            if let Err(err) = write.send(Message::text(msg)).await {
+            if let Err(err) = write.send(Message::Binary(msg)).await {
                 eprintln!("Error writing to WebSocket: {:?}", err);
                 break;
             }
         }
     });
 
-    // Create and spawn tasks for clients
 
     // Keep the program running to simulate clients sending data
     tokio::signal::ctrl_c().await.expect("Failed to listen for ctrl+c");
     println!("Client program terminated.");
 }
-
 /*
 use std::collections::{HashMap, HashSet};
 use crossbeam_channel::unbounded;
@@ -87,3 +82,10 @@ fn monitoring_clients(){
 }
 
 */
+
+
+/*
+fn main() {
+    let mut my_net = network_initializer::NetworkInitializer::new();
+    my_net.initialize_from_file("input.toml");
+}*/

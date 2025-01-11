@@ -22,9 +22,9 @@ impl PacketCreator for ClientChen{
         }
         slices
     }
-    fn msg_to_fragments<T: Serialize>(&mut self, msg: T, destination_id: NodeId) -> Option<HashSet<Packet>> {
+    fn msg_to_fragments<T: Serialize>(&mut self, msg: T, destination_id: NodeId) -> Option<Vec<Packet>> {
         let serialized_msg = serde_json::to_string(&msg).unwrap();
-        let mut fragments = HashSet::new(); //fragments are of type Packet
+        let mut fragments = Vec::new(); //fragments are of type Packet
         let msg_slices = self.divide_string_into_slices(serialized_msg, FRAGMENT_DSIZE);
         let number_of_fragments = msg_slices.len();
 
@@ -50,7 +50,7 @@ impl PacketCreator for ClientChen{
 
                 let routing_header = source_routing_header.clone();
                 let packet = Packet::new_fragment(routing_header, self.status.session_id, fragment);
-                fragments.insert(packet);
+                fragments.push(packet);
             }
             Some(fragments)
         }else{
@@ -86,34 +86,25 @@ impl PacketCreator for ClientChen{
 
     /// find best source routing header sort by the keys of OrderId and the UsageTimes, in order to improve the efficiency of
     fn get_source_routing_header(&mut self, destination_id: NodeId) -> Option<SourceRoutingHeader> {
+        // Get the routes for the destination ID
         if let Some(routes) = self.communication.routing_table.get(&destination_id) {
-            if let Some(min_using_times) = routes.values().min() {
-                if let Some(best_path) = routes
+            // Find the minimum `using_times` value in the routes
+            if let Some(&min_using_times) = routes.values().min() {
+                // Find the best path with the minimum `using_times` and the shortest length
+                if let Some((best_path, _)) = routes
                     .iter()
-                    .filter(|(_, &using_times)| using_times == *min_using_times)
-                    .map(|(path, _)| path)
-                    .min_by_key(|path| path.len())
+                    .filter(|(_, &using_times)| using_times == min_using_times) // Filter paths with min `using_times`
+                    .min_by_key(|(path, _)| path.len()) // Find the shortest path
                 {
-                    // Transform the best path into a vector of NodeId and initialize hop_index to 1
-                    let hops = self.get_hops_from_path_trace(best_path.clone());
-                    return Some(SourceRoutingHeader::new(hops, 1));
+                    // Return the SourceRoutingHeader with the best path
+                    return Some(SourceRoutingHeader::new(best_path.clone(), 1));
                 }
             }
         }
+
+        // Return None if no valid path is found
         None
     }
 
-    fn hops_to_path_trace(&mut self, hops: Vec<NodeId>) -> Vec<(NodeId, NodeType)> {
-            hops
-            .iter()
-            .map(|&node_id| {
-                // Look up the node_id in edge_nodes, defaulting to NodeType::Drone if not found
-                if let Some(node_info) = self.network_info.topology.get(&node_id) {
-                    (node_id, node_info.node_type)
-                } else {
-                    (node_id, NodeType::Drone)
-                }
-            })
-            .collect::<Vec<_>>()
-    }
+
 }

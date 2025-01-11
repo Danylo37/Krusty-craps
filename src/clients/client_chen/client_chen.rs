@@ -13,7 +13,7 @@ use crate::clients::Client as TraitClient;
 use crate::clients::client_chen::prelude::*;
 use crate::clients::client_chen::{CommandHandler, FragmentsHandler, PacketsReceiver, Router, Sending};
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone)]
 pub(crate) struct ClientChen {
     // Client's metadata
     pub(crate) metadata: NodeMetadata,
@@ -68,7 +68,7 @@ impl TraitClient for ClientChen {
 
             // Storage
             storage: NodeStorage {
-                irresolute_path_traces: HashSet::new(),
+                irresolute_path_traces: HashMap::new(),
                 fragment_assembling_buffer: HashMap::new(),
                 output_buffer: HashMap::new(),
                 input_packet_disk: HashMap::new(),   //if at the end of the implementation still doesn't need then delete
@@ -110,7 +110,7 @@ impl TraitClient for ClientChen {
 }
 
 // Metadata about the client
-#[derive(Clone,Serialize, Deserialize)]
+#[derive(Clone)]
 pub(crate) struct NodeMetadata {
     pub(crate) node_id: NodeId,
     pub(crate) node_type: NodeType,
@@ -124,16 +124,16 @@ pub(crate) struct NodeStatus {
 }
 
 // Communication-related information
-#[derive(Clone,Serialize, Deserialize)]
+#[derive(Clone)]
 pub(crate) struct CommunicationInfo {
     pub(crate) connected_nodes_ids: HashSet<NodeId>,
     pub(crate) registered_communication_servers: HashMap<ServerId, Vec<ClientId>>, // Servers registered by the client with respective registered clients
     pub(crate) registered_content_servers: HashSet<ServerId>,
-    pub(crate) routing_table: HashMap<NodeId, HashMap<Vec<(NodeId, NodeType)>, UsingTimes>>, // Routing information per protocol
+    pub(crate) routing_table: HashMap<NodeId, HashMap<Vec<NodeId>, UsingTimes>>, // Routing information per protocol
 }
 
 // Tools for communication
-#[derive(Clone,Serialize, Deserialize)]
+#[derive(Clone)]
 pub(crate) struct CommunicationTools {
     pub(crate) packet_send: HashMap<NodeId, Sender<Packet>>,  // Sender for each connected node
     pub(crate) packet_recv: Receiver<Packet>,                // Unique receiver for this client
@@ -142,9 +142,9 @@ pub(crate) struct CommunicationTools {
 }
 
 // Storage-related data
-#[derive(Clone,Serialize, Deserialize)]
+#[derive(Clone)]
 pub struct NodeStorage {
-    pub(crate) irresolute_path_traces: HashSet<Vec<(NodeId, NodeType)>>,   //Temporary storage for the path_traces that are received, but we didn't know how to process them
+    pub(crate) irresolute_path_traces: HashMap<NodeId, Vec<(NodeId, NodeType)>>,   //Temporary storage for the path_traces that are received, but we didn't know how to process them
     pub(crate) fragment_assembling_buffer: HashMap<(SessionId, FragmentIndex), Packet>, // Temporary storage for recombining fragments
     pub(crate) output_buffer: HashMap<(SessionId, FragmentIndex), Packet>,              // Buffer for outgoing messages
     pub(crate) input_packet_disk: HashMap<(SessionId, FragmentIndex), Packet>,          // Storage for received packets
@@ -159,19 +159,19 @@ pub(crate) struct NetworkInfo{
     pub(crate) topology: HashMap<NodeId, NodeInfo>,
 }
 
-#[derive(Clone,Serialize, Deserialize)]
+#[derive(Default, Clone,Serialize, Deserialize)]
 pub struct NodeInfo{
     pub(crate) node_id: NodeId,
-    pub(crate) node_type: NodeType,
     pub(crate) specific_info: SpecificInfo,
 }
-#[derive(Clone,Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Default)]
 pub enum SpecificInfo{
+    #[default]
     ClientInfo(ClientInformation),
     ServerInfo(ServerInformation),
     DroneInfo(DroneInformation),
 }
-#[derive(Clone,Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Default)]
 pub struct ClientInformation{
     pub(crate) connected_nodes_ids: HashSet<NodeId>,
 }

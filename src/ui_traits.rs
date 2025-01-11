@@ -1,5 +1,5 @@
-use crossbeam_channel::Sender;
+use tokio::sync::mpsc;
 
 pub trait Monitoring{
-    fn run_with_monitoring(&mut self, sender_to_gui:Sender<String>);
+    async fn run_with_monitoring(&mut self, sender_to_gui: mpsc::Sender<Vec<u8>>);
 }

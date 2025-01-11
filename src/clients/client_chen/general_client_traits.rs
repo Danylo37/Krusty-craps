@@ -30,9 +30,7 @@ pub trait Router{
     fn check_if_exists_registered_communication_server_intermediary_in_route(&mut self, route: Vec<NodeId>) -> bool;
     fn check_if_exists_route_contains_server(&mut self, server_id: ServerId, destination_id: ClientId) -> bool;
     fn get_flood_response_initiator(&mut self, flood_response: FloodResponse) -> NodeId;
-    fn filter_flood_responses_from_wanted_destination(&mut self, wanted_destination_id: NodeId) -> HashSet<u64>;
-    fn if_current_flood_response_from_wanted_destination_is_received(&mut self, wanted_destination_id: NodeId) -> bool;
-
+    fn update_topology_entry_for_server(&mut self, initiator_id: NodeId, server_type: ServerType);
 }
 
 pub trait CommunicationTools{
@@ -53,7 +51,6 @@ pub trait PacketCreator{
     fn get_packet_destination(&mut self, packet: &Packet) -> NodeId;
     fn get_hops_from_path_trace(&mut self, path_trace: Vec<(NodeId, NodeType)>) -> Vec<NodeId>;
     fn get_source_routing_header(&mut self, destination_id: NodeId) -> Option<SourceRoutingHeader>;
-    fn hops_to_path_trace(&mut self, hops: Vec<NodeId>) -> Vec<(NodeId, NodeType)>;
 }
 
 pub trait PacketsReceiver{
@@ -69,7 +66,7 @@ pub trait PacketResponseHandler:PacketsReceiver{   //Ack Nack
     ///nack handling (we could do also a sub trait of a sub trait)
     fn handle_error_in_routing(&mut self, node_id: NodeId, nack_packet: Packet, nack: Nack);
     fn handle_destination_is_drone(&mut self, nack_packet: Packet, nack: Nack);
-    fn handle_pack_dropped(&mut self, nack_packet: Packet, nack: Nack);
+    fn handle_packdrop(&mut self, nack_packet: Packet, nack: Nack);
     fn handle_unexpected_recipient(&mut self, node_id: NodeId, nack_packet: Packet, nack: Nack);
 }
 
@@ -87,13 +84,20 @@ pub trait FragmentsHandler:PacketsReceiver{ //message fragments
 
     ///auxiliary functions
     fn get_total_n_fragments(&mut self, session_id: SessionId) -> Option<u64>;
-    fn handle_fragments_in_buffer_with_checking_status<T: Serialize>(&mut self);  //when you run
+    fn handle_fragments_in_buffer_with_checking_status(&mut self);  //when you run
 
-    fn process_message<T: Serialize>(&mut self, initiator_id: NodeId, message: T);
+    fn process_message(&mut self, initiator_id: NodeId, message: Response);
+    /*
+    todo! when it's time, we'll implement a trait Message for the Response
+       such that we can use the generic type parameter T that implements the trait Message or just use the
+       message:&impl Message as argument
+       INSTEAD!!!! YOU CAN CREATE A MESSAGE ENUM THAT INCLUDES THE RESPONSE FROM THE SERVER BUT ALSO
+       THE MESSAGE THAT THE SERVER SENDS TO THE CLIENTS.
+     */
     fn register_client(&mut self, initiator_id: NodeId);
 
     ///principal methods
-    fn reassemble_fragments_in_buffer<T: Serialize + Deserialize>(&mut self) -> Result<T, String>;
+    fn reassemble_fragments_in_buffer(&mut self) -> Result<Response, String>;
 
 }
 

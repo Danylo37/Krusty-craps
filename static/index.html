@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>WebSocket Monitor</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .message {
+            margin: 5px 0;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        .panel {
+            margin-bottom: 20px;
+            position: relative;
+        }
+        .select-button {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            padding: 5px 10px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .ordering-button {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            padding: 5px 10px;
+            background-color: #ffc107;
+            color: black;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .confirm-button, .back-button {
+            margin-top: 20px;
+            padding: 10px 20px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .back-button {
+            background-color: #dc3545; /* Red color for the back button */
+            display: none; /* Hidden by default */
+        }
+        .selection-square {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #007bff;
+            border-radius: 5px;
+            cursor: pointer;
+            display: none; /* Hidden by default */
+        }
+        .selection-square.selected::after {
+            content: "✔";
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #007bff;
+        }
+    </style>
+</head>
+<body>
+<h1>WebSocket Message Monitor</h1>
+
+<!-- Ordering Button -->
+<button class="ordering-button" onclick="orderPanelsByNodeId()">Ordering</button>
+
+<!-- Select Button -->
+<button class="select-button" onclick="toggleSelectionMode()">Select</button>
+
+<!-- Confirm Button (Initially Hidden) -->
+<button class="confirm-button" onclick="confirmSelection()" style="display: none;">Confirm</button>
+
+<!-- Back Button (Initially Hidden) -->
+<button class="back-button" onclick="goBackToAllNodes()" style="display: none;">Back</button>
+
+<!-- Message Display -->
+<div id="messages"></div>
+
+<script>
+    const panelsContainer = document.getElementById("messages"); // Container for all panels
+    const panels = {}; // Object to track panels by node_id
+    const selectedNodes = new Set(); // Set to track selected nodes
+    let isSelectionMode = false; // Flag to track selection mode
+
+    // Initialize MessagePack decoder
+    const msgpack = require("msgpack-lite");
+
+    // Create a WebSocket connection to the Rust server
+    const ws = new WebSocket('ws://127.0.0.1:8000');
+
+    // Function to order panels by node_id
+    function orderPanelsByNodeId() {
+        const panelsArray = Object.values(panels);
+        panelsArray.sort((a, b) => {
+            const nodeIdA = parseInt(a.dataset.nodeId, 10);
+            const nodeIdB = parseInt(b.dataset.nodeId, 10);
+            return nodeIdA - nodeIdB;
+        });
+
+        // Clear the container and re-append panels in sorted order
+        panelsContainer.innerHTML = '';
+        panelsArray.forEach(panel => panelsContainer.appendChild(panel));
+    }
+
+    // Function to toggle selection mode
+    function toggleSelectionMode() {
+        isSelectionMode = !isSelectionMode;
+        document.querySelector('.confirm-button').style.display = isSelectionMode ? 'block' : 'none';
+        document.querySelector('.back-button').style.display = 'none'; // Hide back button in selection mode
+        updateSelectionSquaresVisibility();
+    }
+
+    // Function to update the visibility of selection squares
+    function updateSelectionSquaresVisibility() {
+        Object.values(panels).forEach(panel => {
+            const square = panel.querySelector('.selection-square');
+            if (square) {
+                square.style.display = isSelectionMode ? 'block' : 'none';
+            }
+        });
+    }
+
+    // Function to confirm the selection
+    function confirmSelection() {
+        isSelectionMode = false;
+        document.querySelector('.confirm-button').style.display = 'none';
+        document.querySelector('.back-button').style.display = 'block'; // Show back button after confirmation
+        updateSelectionSquaresVisibility();
+        filterPanelsBySelectedNodes();
+    }
+
+    // Function to filter panels based on selected nodes
+    function filterPanelsBySelectedNodes() {
+        Object.values(panels).forEach(panel => {
+            const nodeId = panel.dataset.nodeId;
+            if (selectedNodes.has(nodeId)) {
+                panel.style.display = 'block';
+            } else {
+                panel.style.display = 'none';
+            }
+        });
+    }
+
+    // Function to go back to monitoring all nodes
+    function goBackToAllNodes() {
+        selectedNodes.clear(); // Clear selected nodes
+        document.querySelector('.back-button').style.display = 'none'; // Hide back button
+        document.querySelector('.confirm-button').style.display = 'none'; // Hide confirm button
+        Object.values(panels).forEach(panel => {
+            panel.style.display = 'block'; // Show all panels
+            const square = panel.querySelector('.selection-square');
+            if (square) {
+                square.classList.remove('selected'); // Remove selection tick
+            }
+        });
+    }
+
+    // Handle WebSocket messages
+    ws.onmessage = (event) => {
+        try {
+            console.log('Message received');
+
+            // Decode the MessagePack binary data
+            const data = msgpack.decode(new Uint8Array(event.data));
+
+            // Check if a panel already exists for this node
+            let panel = panels[data.node_id];
+            if (!panel) {
+                // Create a new panel if it doesn't exist
+                panel = document.createElement("div");
+                panel.className = "panel";
+                panel.dataset.nodeId = data.node_id; // Store node ID in dataset
+                panel.innerHTML = `
+                <div class="selection-square" onclick="toggleNodeSelection('${data.node_id}')"></div>
+                <h2>Node ${data.node_id}</h2>
+                <div class="session">Session ID: <span id="session-${data.node_id}"></span></div>
+                <div class="connected-nodes">Connected Nodes: <span id="connected-nodes-${data.node_id}"></span></div>
+                <div class="routing-table">Routing Table: <pre id="routing-table-${data.node_id}"></pre></div>
+                <div class="message-chat">Message Chat: <pre id="message-chat-${data.node_id}"></pre></div>
+            `;
+                panelsContainer.appendChild(panel);
+                panels[data.node_id] = panel;
+            }
+
+            // Update the displayed data for this node
+            const sessionSpan = document.getElementById(`session-${data.node_id}`);
+            sessionSpan.textContent = data.session_id;
+
+            const connectedNodesSpan = document.getElementById(`connected-nodes-${data.node_id}`);
+            connectedNodesSpan.textContent = Array.from(data.connected_node_ids).join(', ');
+
+            const routingTablePre = document.getElementById(`routing-table-${data.node_id}`);
+            routingTablePre.textContent = JSON.stringify(data.routing_table, null, 2);
+
+            const messageChatPre = document.getElementById(`message-chat-${data.node_id}`);
+            messageChatPre.textContent = JSON.stringify(data.message_chat, null, 2);
+
+            // Update selection square visibility if in selection mode
+            if (isSelectionMode) {
+                const square = panel.querySelector('.selection-square');
+                square.style.display = 'block';
+            }
+        } catch (e) {
+            console.error('Error processing message:', e);
+
+            // Handle invalid or plain text messages
+            const msgDiv = document.createElement("div");
+            msgDiv.className = "message error";
+            msgDiv.textContent = `Invalid message: ${event.data}`;
+            panelsContainer.appendChild(msgDiv);
+        }
+    };
+
+    // Function to toggle node selection
+    function toggleNodeSelection(nodeId) {
+        if (selectedNodes.has(nodeId)) {
+            selectedNodes.delete(nodeId);
+        } else {
+            selectedNodes.add(nodeId);
+        }
+        const square = document.querySelector(`.panel[data-node-id="${nodeId}"] .selection-square`);
+        square.classList.toggle('selected');
+    }
+
+    // Handle WebSocket connection close
+    ws.onclose = () => {
+        const msgDiv = document.createElement("div");
+        msgDiv.className = "message error";
+        msgDiv.textContent = 'WebSocket connection closed.';
+        panelsContainer.appendChild(msgDiv);
+    };
+</script>
+</body>
+</html>

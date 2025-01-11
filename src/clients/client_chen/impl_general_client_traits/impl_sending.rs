@@ -4,8 +4,9 @@ use crate::clients::client_chen::general_client_traits::*;
 use crate::general_use::NotSentType::ToBeSent;
 
 impl Sending for ClientChen {
-    fn send_packets_in_buffer_with_checking_status(&mut self){
-        for &(session_id, fragment_index) in self.storage.output_buffer.keys(){
+    fn send_packets_in_buffer_with_checking_status(&mut self) {
+        let keys: Vec<_> = self.storage.output_buffer.keys().cloned().collect(); // Collect keys into a Vec
+        for (session_id, fragment_index) in keys {
             let packet = self.storage.output_packet_disk.get(&(session_id, fragment_index)).unwrap().clone();
             self.packets_status_sending_actions(packet, self.storage.packets_status.get(&(session_id, fragment_index)).unwrap().clone());
         }
@@ -36,15 +37,12 @@ impl Sending for ClientChen {
         }
     }
     fn send_packet_to_connected_node(&mut self, target_node_id: NodeId, packet: Packet) {
-        let path_trace = self.hops_to_path_trace(packet.clone().routing_header.hops);
-
         // Increase `using_times` by 1 for the corresponding route
         if let Some(routes) = self.communication.routing_table.get_mut(&packet.routing_header.destination().unwrap()) {
-            if let Some(using_times) = routes.get_mut(&path_trace) { //there are always some using times because it is initialized to 0 for every route
+            if let Some(using_times) = routes.get_mut(&packet.clone().routing_header.hops) { //there are always some using times because it is initialized to 0 for every route
                 *using_times += 1;
             }
         }
-
         //insert the packet in output buffer, output_packet_dist, packet_status
         self.storage.output_buffer.insert((packet.session_id, match packet.clone().pack_type{
             PacketType::MsgFragment(fragment) => fragment.fragment_index,
@@ -52,7 +50,6 @@ impl Sending for ClientChen {
         }), packet.clone());
 
         self.storage.output_packet_disk.insert((packet.session_id, 0), packet.clone());
-
 
         if self.communication.connected_nodes_ids.contains(&target_node_id) {
             if let Some(sender) = self.communication_tools.packet_send.get_mut(&target_node_id) {

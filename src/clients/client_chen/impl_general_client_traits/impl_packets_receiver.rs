@@ -5,8 +5,8 @@ impl PacketsReceiver for ClientChen {
     fn handle_received_packet(&mut self, packet: Packet) {
         //insert the packets into the input disk
         self.decreasing_using_times_when_receiving_packet(&packet);
-        self.storage.input_packet_disk.insert((self.status.session_id, match packet.pack_type {
-            PacketType::MsgFragment(Some(fragment)) => {
+        self.storage.input_packet_disk.insert((self.status.session_id, match packet.clone().pack_type {
+            PacketType::MsgFragment(fragment) => {
                 self.storage.fragment_assembling_buffer.insert((self.status.session_id, fragment.fragment_index), packet.clone());
                 fragment.fragment_index
             },
@@ -34,12 +34,9 @@ impl PacketsReceiver for ClientChen {
         // Get the destination ID from the last hop
         let destination_id = hops.last().copied().unwrap();
 
-        // Construct the path trace
-        let path_trace: Vec<_> = self.hops_to_path_trace(hops);
-
         // Decrease `using_times` by 1 for the corresponding route
         if let Some(routes) = self.communication.routing_table.get_mut(&destination_id) {
-            if let Some(using_times) = routes.get_mut(&path_trace) {
+            if let Some(using_times) = routes.get_mut(&hops) {
                 if *using_times > 0 { // Prevent underflow
                     *using_times -= 1;
                 }

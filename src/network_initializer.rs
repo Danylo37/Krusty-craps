@@ -5,7 +5,7 @@ use std::{
 };
 use crossbeam_channel::*;
 use rand::prelude::*;
-
+use tokio::sync::mpsc;
 //Wg libraries
 use wg_2024::{
     config::{Client, Config, Drone, Server},
@@ -81,16 +81,18 @@ pub struct NetworkInitializer {
     server_channels: HashMap<NodeId, (Sender<Packet>, ServerType)>,
     drone_brand_usage: HashMap<DroneBrand, UsingTimes>,
     client_type_usage: HashMap<ClientType, UsingTimes>,
+    sender_to_gui: mpsc::Sender<Vec<u8>>
 }
 
 impl NetworkInitializer {
-    pub fn new() -> Self {
+    pub fn new(sender_to_gui: mpsc::Sender<Vec<u8>>) -> Self {
         Self {
             drone_channels: HashMap::new(),
             client_channels: HashMap::new(),
             server_channels: HashMap::new(),
             drone_brand_usage: DroneBrand::iter().map(|brand| (brand, 0)).collect(),
             client_type_usage: ClientType::iter().map(|client_type| (client_type, 0)).collect(),
+            sender_to_gui,
         }
     }
     pub fn initialize_from_file(&mut self, config_path: &str) {
@@ -371,7 +373,7 @@ impl NetworkInitializer {
 
     fn create_and_spawn_client_with_monitoring<T>(   //with gui monitoring
                                      &mut self,
-                                     sender_to_gui: Sender<String>,
+                                     sender_to_gui: mpsc::Sender<Vec<u8>>,
                                      client_params: (
                                          ClientId,
                                          Sender<ClientEvent>,

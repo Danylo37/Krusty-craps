@@ -33,7 +33,8 @@ impl PacketResponseHandler for ClientChen {
 
         // Attempt to retrieve the destination of the packet from the output buffer using its session ID and fragment index.
         let packet_destination = if let Some(packet) = self.storage.output_buffer.get(&(nack_packet.session_id, nack.fragment_index)) {
-            self.get_packet_destination(packet) // Assuming the Packet struct has a 'destination' field that holds the target node ID.
+            let packet_clone = packet.clone();
+            self.get_packet_destination(&packet_clone) // Assuming the Packet struct has a 'destination' field that holds the target node ID.
         } else {
             // If the packet is not found, we can choose to return early or take another action.
             // Here, we'll simply return, as we cannot determine the destination without the packet.
@@ -60,7 +61,7 @@ impl PacketResponseHandler for ClientChen {
         self.update_packet_status(nack_packet.session_id-1, nack.fragment_index, PacketStatus::NotSent(NotSentType::DroneDestination));
         //the post-part of the handling is in the send_packets_in_buffer_checking_status
     }
-    fn handle_pack_dropped(&mut self, nack_packet: Packet, nack: Nack) {
+    fn handle_packdrop(&mut self, nack_packet: Packet, nack: Nack) {
         self.update_packet_status(nack_packet.session_id-1, nack.fragment_index, PacketStatus::NotSent(NotSentType::Dropped));
         //the post-part of the handling is in the send_packets_in_buffer_checking_status
     }

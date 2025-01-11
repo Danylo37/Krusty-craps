@@ -31,7 +31,7 @@ impl FragmentsHandler for ClientChen{
             })
     }
 
-    fn handle_fragments_in_buffer_with_checking_status<T: Serialize + Deserialize>(&mut self) {
+    fn handle_fragments_in_buffer_with_checking_status(&mut self) {
         // Aggregate session IDs and their corresponding fragment IDs
         let sessions: HashMap<SessionId, Vec<FragmentIndex>> = self
             .storage
@@ -46,17 +46,19 @@ impl FragmentsHandler for ClientChen{
         for (session_id, fragments) in sessions {
             if let Some(total_n_fragments) = self.get_total_n_fragments(session_id) {
                 if fragments.len() as u64 == total_n_fragments {
-                    let session_fragments = self
+                    // Clone the first packet to avoid borrowing issues
+                    let first_packet = self
                         .storage
                         .fragment_assembling_buffer
                         .iter()
-                        .filter(|(&(session, _), _)| session == session_id)
-                        .collect::<Vec<_>>();
+                        .find(|(&(session, _), _)| session == session_id)
+                        .map(|(_, packet)| packet.clone());
 
-                    if let Some((_, first_packet)) = session_fragments.first() {
-                        let initiator_id = self.get_packet_destination(first_packet);
+                    if let Some(first_packet) = first_packet {
+                        let initiator_id = self.get_packet_destination(&first_packet);
 
-                        if let Ok(message) = self.reassemble_fragments_in_buffer::<T>() {
+                        // Reassemble fragments and process the message
+                        if let Ok(message) = self.reassemble_fragments_in_buffer() {
                             self.process_message(initiator_id, message);
                         } else {
                             eprintln!("Failed to reassemble fragments for session: {:?}", session_id);
@@ -67,9 +69,9 @@ impl FragmentsHandler for ClientChen{
         }
     }
 
-    fn process_message<T: Serialize>(&mut self, initiator_id: NodeId, message: T) {
+    fn process_message(&mut self, initiator_id: NodeId, message: Response) {
         match message {
-            Response::ServerType(server_type) => self.update_topology_entry(initiator_id, server_type),
+            Response::ServerType(server_type) => self.update_topology_entry_for_server(initiator_id, server_type),
             Response::ClientRegistered => self.register_client(initiator_id),
             Response::MessageFrom(client_id, message) => {
                 self.storage
@@ -96,24 +98,22 @@ impl FragmentsHandler for ClientChen{
     }
 
     fn register_client(&mut self, initiator_id: NodeId) {
-        if let Some(entry) = self.network_info.topology.entry(initiator_id).or_default().specific_info {
-            if let SpecificInfo::ServerInfo(ref mut server_info) = entry {
-                match server_info.server_type {
-                    ServerType::Communication => {
-                        self.communication
-                            .registered_communication_servers
-                            .insert(initiator_id, vec![self.metadata.node_id]);
-                    }
-                    ServerType::Text | ServerType::Media => {
-                        self.communication.registered_content_servers.insert(initiator_id);
-                    }
-                    _ => {}
+        if let SpecificInfo::ServerInfo(ref mut server_info) = self.network_info.topology.entry(initiator_id).or_default().specific_info {
+            match server_info.server_type {
+                ServerType::Communication => {
+                    self.communication
+                        .registered_communication_servers
+                        .insert(initiator_id, vec![self.metadata.node_id]);
                 }
+                ServerType::Text | ServerType::Media => {
+                    self.communication.registered_content_servers.insert(initiator_id);
+                }
+                _ => {}
             }
         }
     }
 
-    fn reassemble_fragments_in_buffer<T: Serialize + for<'a> Deserialize<'a>>(&mut self) -> Result<T, String> {
+    fn reassemble_fragments_in_buffer(&mut self) -> Result<Response, String> {
         let mut keys: Vec<(SessionId, FragmentIndex)> = self
             .storage
             .fragment_assembling_buffer
