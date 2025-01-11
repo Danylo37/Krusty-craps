@@ -8,6 +8,7 @@ mod ui;
 
 mod clients;
 pub mod ui_traits;
+mod connecting_websocket;
 
 use serde::{Deserialize, Serialize};
 use futures_util::{SinkExt, StreamExt};

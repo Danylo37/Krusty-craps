@@ -38,7 +38,7 @@ impl Monitoring for ClientChen {
                     }
                 },
                 default(std::time::Duration::from_millis(10)) => {
-                    self.handle_fragments_in_buffer_with_checking_status::<Response>();
+                    self.handle_fragments_in_buffer_with_checking_status();
                     self.send_packets_in_buffer_with_checking_status();
                     self.update_routing_checking_status();
 
@@ -50,7 +50,7 @@ impl Monitoring for ClientChen {
                         .map(|(node_id, routes)| {
                             let paths: Vec<Vec<NodeId>> = routes
                                 .keys()
-                                .map(|path| path.iter().map(|(node_id, _)| *node_id).collect())
+                                .cloned()
                                 .collect();
                             (*node_id, paths)
                         })

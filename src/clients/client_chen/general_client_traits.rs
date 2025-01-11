@@ -43,7 +43,7 @@ pub trait CommunicationTools{
 pub trait PacketCreator{
     ///creating fragment packet
     fn divide_string_into_slices(&mut self, string: String, max_slice_length: usize) -> Vec<String>;
-    fn msg_to_fragments<T: Serialize>(&mut self, msg: T, destination_id: NodeId) -> Option<HashSet<Packet>>;
+    fn msg_to_fragments<T: Serialize>(&mut self, msg: T, destination_id: NodeId) -> Option<Vec<Packet>>;
     ///creating ack packet
     fn create_ack_packet_from_receiving_packet(&mut self, packet: Packet) -> Packet;
 

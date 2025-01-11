@@ -164,48 +164,57 @@ pub struct NodeInfo{
     pub(crate) node_id: NodeId,
     pub(crate) specific_info: SpecificInfo,
 }
-#[derive(Clone, Serialize, Deserialize, Default)]
-pub enum SpecificInfo{
-    #[default]
+#[derive(Clone, Serialize, Deserialize)]
+pub enum SpecificInfo {
     ClientInfo(ClientInformation),
     ServerInfo(ServerInformation),
     DroneInfo(DroneInformation),
 }
+
+// Manually implement Default for SpecificInfo
+impl Default for SpecificInfo {
+    fn default() -> Self {
+        SpecificInfo::ClientInfo(ClientInformation::default())
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize, Default)]
-pub struct ClientInformation{
+pub struct ClientInformation {
     pub(crate) connected_nodes_ids: HashSet<NodeId>,
 }
-impl ClientInformation{
-    fn new(connected_nodes_ids: HashSet<NodeId>) -> ClientInformation{
-        ClientInformation{
-            connected_nodes_ids
+
+impl ClientInformation {
+    fn new(connected_nodes_ids: HashSet<NodeId>) -> ClientInformation {
+        ClientInformation {
+            connected_nodes_ids,
         }
     }
 }
 
-#[derive(Clone,Serialize, Deserialize)]
-pub struct ServerInformation{
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ServerInformation {
     pub(crate) connected_nodes_ids: HashSet<NodeId>,
     pub(crate) server_type: ServerType,
 }
 
-impl ServerInformation{
-    fn new(connected_nodes_ids: HashSet<NodeId>, server_type: ServerType) -> ServerInformation{
-        ServerInformation{
+impl ServerInformation {
+    fn new(connected_nodes_ids: HashSet<NodeId>, server_type: ServerType) -> ServerInformation {
+        ServerInformation {
             connected_nodes_ids,
-            server_type
+            server_type,
         }
     }
 }
 
-#[derive(Clone,Serialize, Deserialize)]
-pub struct DroneInformation{
+#[derive(Clone, Serialize, Deserialize)]
+pub struct DroneInformation {
     pub(crate) connected_nodes_ids: HashSet<NodeId>,
 }
-impl DroneInformation{
-    fn new(connected_nodes_ids: HashSet<NodeId>) -> DroneInformation{
-        DroneInformation{
-            connected_nodes_ids
+
+impl DroneInformation {
+    fn new(connected_nodes_ids: HashSet<NodeId>) -> DroneInformation {
+        DroneInformation {
+            connected_nodes_ids,
         }
     }
 }

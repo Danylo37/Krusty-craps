@@ -1,6 +1,7 @@
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::{HashMap};
 use std::fmt::Debug;
+use tokio::sync::mpsc;
 use wg_2024::{
     network::{NodeId},
     packet::{
@@ -74,7 +75,7 @@ impl MediaServer {
 }
 
 impl Monitoring for MediaServer {
-    fn run_with_monitoring(&mut self, sender_to_gui: Sender<String>) {
+    async fn run_with_monitoring(&mut self, sender_to_gui: mpsc::Sender<Vec<u8>>) {
         loop {
             select_biased! {
                 recv(self.get_from_controller_command()) -> command_res => {
@@ -102,15 +103,7 @@ impl Monitoring for MediaServer {
                     }
                 },
                 default(std::time::Duration::from_millis(10)) => {
-                    self.handle_fragments_in_buffer_with_checking_status();
-                    self.send_packets_in_buffer_with_checking_status();
-                    self.update_routing_checking_status();
-
-                    let json_string = serde_json::to_string(&self).unwrap();
-                    if sender_to_gui.send(json_string).is_err() {
-                        eprintln!("Error sending data for Node {}", self.id);
-                        break; // Exit loop if sending fails
-                    }
+                    //todo!
                  },
             }
         }
