@@ -72,10 +72,6 @@ pub enum ClientCommand {
 #[derive(Debug, Clone)]
 pub enum ClientEvent {
     PacketSent(Packet),
-    SenderRemoved(NodeId),
-    SenderAdded(NodeId),
-    DoingFlood(FloodId),
-    FloodIsFinished(FloodId),
     KnownServers(Vec<(NodeId, ServerType)>),
 }
 

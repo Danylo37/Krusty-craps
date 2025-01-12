@@ -141,6 +141,19 @@ impl ChatClientDanylo {
             ClientCommand::RunUI => {
                 self.run_gui();
             }
+            ClientCommand::ShortcutPacket(packet) => {
+                info!("Shortcut packet received from SC: {:?}", packet);
+                self.handle_packet(packet);
+            }
+            ClientCommand::GetKnownServers => {
+                debug!("Handling GetKnownServers command");
+                let servers: Vec<(NodeId, ServerType)> = self
+                    .servers
+                    .iter()
+                    .map(|(&id, &server_type)| (id, server_type))
+                    .collect();
+                self.send_event(ClientEvent::KnownServers(servers));
+            }
             // -------------- for tests -------------- \\
             ClientCommand::StartFlooding => {
                 self.discovery();
@@ -773,10 +786,7 @@ impl ChatClientDanylo {
         let result = self.controller_send.send(event.clone());
         let event_name = match event {
             ClientEvent::PacketSent(_) => "PacketSent",
-            ClientEvent::SenderRemoved(_) => "SenderRemoved",       // todo send event
-            ClientEvent::SenderAdded(_) => "SenderAdded",           // todo send event
-            ClientEvent::DoingFlood(_) => "DoingFlood",             // todo send event
-            ClientEvent::FloodIsFinished(_) => "FloodIsFinished",   // todo send event
+            ClientEvent::KnownServers(_) => "KnownServers",
         };
 
         match result {
