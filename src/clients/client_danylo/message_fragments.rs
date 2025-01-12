@@ -73,11 +73,6 @@ impl MessageFragments {
         }
     }
 
-    /// ###### Retrieves the index of the last fragment.
-    pub fn get_last_fragment_index(&self) -> usize {
-        self.last_fragment_index
-    }
-
     /// ###### Increments the index of the last processed or sent fragment.
     pub fn increment_last_index(&mut self) {
         self.last_fragment_index += 1;
