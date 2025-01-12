@@ -1,11 +1,15 @@
+use std::thread;
 use eframe::{
     App,
     Frame,
     egui::{CentralPanel, Context, Ui}
 };
-use wg_2024::network::NodeId;
+use wg_2024::{
+    network::NodeId,
+    packet::NodeType
+};
 use crate::general_use::ServerType;
-use super::ChatClientDanylo;
+use super::{ChatClientDanylo, Node};
 
 #[derive(PartialEq)]
 enum Menu {
@@ -36,6 +40,8 @@ pub struct ChatGUI<'a> {
     current_server: NodeId,
     current_message: Option<String>,
     current_message_status: Option<String>,
+    receive_responses: bool,
+    wait_response: bool
 }
 
 impl App for ChatGUI<'_>  {
@@ -51,7 +57,7 @@ impl App for ChatGUI<'_>  {
                 Menu::ContentServer => self.what_are_you_doing(ui),
                 Menu::UndefinedServer => self.undefined_server_menu(ui),
 
-                Menu::SendRequest(RequestType::AskListClients) => self.ask_users_list(ui),
+                Menu::SendRequest(RequestType::AskListClients) => self.ask_clients_list(ui),
                 Menu::SendRequest(RequestType::RegisterClient) => self.register_client(ui),
                 Menu::SendRequest(RequestType::AskType) => self.ask_type(ui),
 
@@ -70,6 +76,8 @@ impl <'a> ChatGUI<'a> {
             current_server: 0,
             current_message: Some(String::new()),
             current_message_status: None,
+            receive_responses: false,
+            wait_response: false,
         }
     }
 
@@ -240,6 +248,18 @@ impl <'a> ChatGUI<'a> {
             ui.text_edit_singleline(message);
         });
 
+        while self.wait_response {
+            if self.client.response_received {
+                self.current_message_status = Some("Message delivered successfully!".to_string());
+                self.wait_response = false;
+            }
+            if let Some(error) = &self.client.external_error {
+                self.current_message_status = Some(format!("Failed to send message: {}", error));
+                self.wait_response = false;
+            }
+            thread::sleep(std::time::Duration::from_millis(10));
+        }
+
         if self.current_message_status.is_some() {
             ui.label(self.current_message_status.as_ref().unwrap());
         }
@@ -250,7 +270,7 @@ impl <'a> ChatGUI<'a> {
                 self.current_message_status = Some("Message cannot be empty.".to_string());
             } else {
                 match self.client.send_message_to(recipient, message.trim().to_string(), self.current_server) {
-                    Ok(_) => self.current_message_status = Some("Message sent successfully!".to_string()),
+                    Ok(_) => self.wait_response = true,
                     Err(error) => self.current_message_status = Some(format!("Failed to send message: {}", error)),
                 };
             }
@@ -271,16 +291,31 @@ impl <'a> ChatGUI<'a> {
 
         ui.label("Requesting server type...");
         match self.client.request_server_type(server_id) {
-            Ok(_) => {
-                ui.label(format!("Server type is: {}", self.client.servers.get(&server_id).unwrap()));
-            }
+            Ok(_) => self.wait_response = true,
             Err(error) => {
-                ui.label(format!("Failed to get server type: {}", error));
+                self.current_message_status = Some(format!("Failed to get server type: {}", error));
             }
+        }
+
+        while self.wait_response {
+            if self.client.response_received {
+                self.current_message_status = Some(format!("Server type is: {}", self.client.servers.get(&server_id).unwrap()));
+                self.wait_response = false;
+            }
+            if let Some(error) = &self.client.external_error {
+                self.current_message_status = Some(format!("Failed to get server type: {}", error));
+                self.wait_response = false;
+            }
+            thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        if self.current_message_status.is_some() {
+            ui.label(self.current_message_status.as_ref().unwrap());
         }
 
         ui.separator();
         if ui.button("Back").clicked() {
+            self.current_message_status = None;
             self.current_menu = Menu::ChooseServer;
         }
     }
@@ -291,41 +326,76 @@ impl <'a> ChatGUI<'a> {
 
         ui.label("Requesting to register...");
         match self.client.request_to_register(self.current_server) {
-            Ok(_) => {
-                ui.label("You have registered successfully!");
-            }
+            Ok(_) => self.wait_response = true,
             Err(error) => {
-                ui.label(format!("Failed to register: {}", error));
+                self.current_message_status = Some(format!("Failed to register: {}", error));
             }
+        }
+
+        while self.wait_response {
+            if self.client.response_received {
+                self.current_message_status = Some("You have registered successfully!".to_string());
+                self.wait_response = false;
+            }
+            if let Some(error) = &self.client.external_error {
+                self.current_message_status = Some(format!("Failed to register: {}", error));
+                self.wait_response = false;
+            }
+            thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        if self.current_message_status.is_some() {
+            ui.label(self.current_message_status.as_ref().unwrap());
         }
 
         ui.separator();
         if ui.button("Back").clicked() {
+            self.current_message_status = None;
             self.current_menu = Menu::ChooseServer;
         }
     }
 
-    fn ask_users_list(&mut self, ui: &mut Ui) {
+    fn ask_clients_list(&mut self, ui: &mut Ui) {
         ui.heading("Request list of clients");
         ui.separator();
 
         ui.label("Requesting list of clients...");
-        match self.client.request_users_list(self.current_server) {
-            Ok(_) => {
-                ui.label("Client list:");
-                for user_id in self.client.clients.iter() {
-                    ui.label(format!("Client {}", user_id));
-                }
-            }
+        match self.client.request_clients_list(self.current_server) {
+            Ok(_) => self.wait_response = true,
             Err(error) => {
-                ui.label(format!("Failed to get clients list: {}", error));
+                self.current_message_status = Some(format!("Failed to get clients list: {}", error));
             }
+        }
+
+        while self.wait_response {
+            if self.client.response_received {
+                self.current_message_status = Some(self.get_clients_string());
+                self.wait_response = false;
+            }
+            if let Some(error) = &self.client.external_error {
+                self.current_message_status = Some(format!("Failed to get clients list: {}", error));
+                self.wait_response = false;
+            }
+            thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        if self.current_message_status.is_some() {
+            ui.label(self.current_message_status.as_ref().unwrap());
         }
 
         ui.separator();
         if ui.button("Back").clicked() {
+            self.current_message_status = None;
             self.current_menu = Menu::CommunicationServer;
         }
+    }
+
+    fn get_clients_string(&self) -> String {
+        let mut clients_string = "Client list:\n".to_string();
+        for client_id in self.client.clients.iter() {
+            clients_string.push_str(&format!("Client {}\n", client_id));
+        }
+        clients_string
     }
 
     fn discovery(&mut self, ui: &mut Ui) {
@@ -333,11 +403,37 @@ impl <'a> ChatGUI<'a> {
         ui.separator();
 
         ui.label("Starting discovery...");
-        self.client.discovery();
+        match self.client.discovery() {
+            Ok(_) => {
+                self.receive_responses = true;
+            }
+            Err(error) => {
+                ui.label(format!("Failed to discover: {}", error));
+            }
+        }
+
+        while self.receive_responses {  // todo add timeout
+            for response in &self.client.flood_responses {
+                ui.label(Self::get_response_string(response));
+            }
+        }
 
         ui.separator();
         if ui.button("Back").clicked() {
+            self.receive_responses = false;
             self.current_menu = Menu::Main;
         }
+    }
+
+    fn get_response_string(response: &(Node, Vec<Node>)) -> String {
+        let sender_id = response.0.0;
+        let sender_type = match response.0.1 {
+            NodeType::Client => "Client",
+            NodeType::Drone => "Drone",
+            NodeType::Server => "Server",
+        };
+        let path = response.1.clone();
+
+        format!("Response from {} {} with path: {:?}", sender_type, sender_id, path)
     }
 }
