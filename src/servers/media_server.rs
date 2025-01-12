@@ -1,4 +1,4 @@
-use crossbeam_channel::{select_biased, Receiver, Sender};
+use crossbeam_channel::{Receiver, Sender};
 use std::collections::{HashMap};
 use std::fmt::Debug;
 use std::future::Future;
@@ -12,7 +12,6 @@ use wg_2024::{
 };
 use tokio::sync::mpsc;
 use crate::general_use::{Query, Response, ServerCommand, ServerEvent, ServerType};
-use crate::servers::text_server::TextServer;
 use crate::ui_traits::{crossbeam_to_tokio_bridge, Monitoring};
 use super::server::MediaServer as CharTrait;
 use super::server::Server as MainTrait;
@@ -106,6 +105,15 @@ impl Monitoring for MediaServer {
                                 }
                                 ServerCommand::RemoveSender(id) => {
                                     self.packet_send.remove(&id);
+                                }
+                                ServerCommand::ShortcutPacket(packet) => {
+                                     match packet.pack_type {
+                                        PacketType::Nack(nack) => self.handle_nack(nack, packet.session_id),
+                                        PacketType::Ack(ack) => self.handle_ack(ack),
+                                        PacketType::MsgFragment(fragment) => self.handle_fragment(fragment, packet.routing_header ,packet.session_id),
+                                        PacketType::FloodRequest(flood_request) => self.handle_flood_request(flood_request, packet.session_id),
+                                        PacketType::FloodResponse(flood_response) => self.handle_flood_response(flood_response),
+                                    }
                                 }
                             }
                         } else {
