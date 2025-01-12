@@ -13,6 +13,12 @@ impl CommunicationTools for ClientChen{
             })
             .collect()
     }
+
+    fn get_registered_servers(&mut self) -> HashSet<ServerId> {
+        let mut registered_servers:HashSet<ServerId> = self.communication.registered_communication_servers.keys().cloned().collect();
+        registered_servers.extend(self.communication.registered_content_servers.clone());
+        registered_servers
+    }
     fn get_edge_nodes_from_topology(&mut self) -> HashSet<NodeId> {
         self.network_info.topology.iter()
             .filter_map(|(&node_id, node_info)| {
