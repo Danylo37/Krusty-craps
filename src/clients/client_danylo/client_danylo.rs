@@ -1,7 +1,6 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     fmt::Debug,
-    thread,
 };
 
 use crossbeam_channel::{select_biased, Receiver, Sender};
@@ -18,6 +17,8 @@ use crate::{
     clients::Client
 };
 use super::{MessageFragments, ChatGUI};
+
+pub type Node = (NodeId, NodeType);
 
 pub struct ChatClientDanylo {
     // ID
@@ -49,9 +50,10 @@ pub struct ChatClientDanylo {
     // Inbox
     pub inbox: Vec<(NodeId, Message)>,                      // Messages with their senders
 
-    // Response statuses
-    response_received: bool,                                // Status of the last sent query
-    external_error: Option<String>,                         // Error message from server/drone
+    // For GUI
+    pub response_received: bool,                            // Flag to indicate if a response was received for the last request
+    pub external_error: Option<String>,                     // Error message from server/drone
+    pub flood_responses: Vec<(Node, Vec<Node>)>,            // Received flood responses (from_node, path_trace)
 }
 
 impl Client for ChatClientDanylo {
@@ -80,6 +82,7 @@ impl Client for ChatClientDanylo {
             inbox: Vec::new(),
             response_received: false,
             external_error: None,
+            flood_responses: Vec::new(),
         }
     }
 
@@ -190,7 +193,7 @@ impl ChatClientDanylo {
 
         match nack.nack_type {
             NackType::ErrorInRouting(id) => {
-                self.handle_error_in_routing(id, session_id);
+                self.handle_error_in_routing(nack.fragment_index, id, session_id);
             }
             NackType::DestinationIsDrone => {
                 self.external_error = Some("DestinationIsDrone".to_string());
@@ -198,20 +201,21 @@ impl ChatClientDanylo {
             NackType::UnexpectedRecipient(recipient_id) => {
                 self.external_error = Some(format!("UnexpectedRecipient (node with id {})", recipient_id));
             }
-            NackType::Dropped => self.resend_last_packet(session_id),
+            NackType::Dropped => self.resend_fragment(nack.fragment_index, session_id),
         }
     }
 
-    /// ###### Handles an error in routing based on the received NACK.
-    /// Updates the network topology and routes based on the error node.
-    /// Resends the last packet for the specified session if a new route is found.
-    fn handle_error_in_routing(&mut self, error_node: NodeId, session_id: u64) {
+    /// todo
+    fn handle_error_in_routing(&mut self,fragment_index: u64, error_node: NodeId, session_id: u64) {
         self.update_topology_and_routes(error_node);
         if self.message_to_send.as_ref().unwrap().get_route().is_empty() {
-            self.external_error = Some("ErrorInRouting; no available routes".to_string());
-            return;
+            if self.discovery().is_err() {
+                self.external_error = Some("Failed to find a new route after error in routing".to_string());
+                error!("Failed to find a new route after error in routing");
+                return;
+            };
         }
-        self.resend_last_packet(session_id);
+        self.resend_fragment(fragment_index, session_id);
     }
 
     /// ###### Updates the network topology and routes based on the received NACK.
@@ -268,21 +272,18 @@ impl ChatClientDanylo {
         }
     }
 
-    /// ###### Resends the last packet for a given session.
-    /// Retrieves the last fragment packet for the specified session and attempts to resend it.
-    /// Logs the success or failure of the resend operation.
-    fn resend_last_packet(&mut self, session_id: u64) {
-        debug!("Resending last packet for session {}", session_id);
+    /// todo
+    fn resend_fragment(&mut self, fragment_index: u64, session_id: u64) {
+        debug!("Resending fragment {} for session {}", fragment_index, session_id);
 
         let message = self.message_to_send.as_ref().unwrap();
-        let last_fragment_index = message.get_last_fragment_index();
-        let packet = message.get_fragment_packet(last_fragment_index).unwrap();
+        let packet = message.get_fragment_packet(fragment_index as usize).unwrap();
         match self.send_to_next_hop(packet) {
-            Ok(_) => info!("Resent last fragment for session {}", session_id),
+            Ok(_) => info!("Resent fragment {} for session {}", fragment_index, session_id),
             Err(err) => {
-                error!("Failed to resend last fragment for session {}: {}", session_id, err);
+                error!("Failed to resend fragment {} for session {}: {}", fragment_index, session_id, err);
                 self.external_error = Some(
-                    format!("Failed to resend fragment {} for session {}: {}", last_fragment_index, session_id, err)
+                    format!("Failed to resend fragment {} for session {}: {}", fragment_index, session_id, err)
                 );
             },
         }
@@ -463,6 +464,7 @@ impl ChatClientDanylo {
 
         let path = &flood_response.path_trace;
 
+        self.flood_responses.push((path.last().unwrap().clone(), path.clone()));
         self.update_routes_and_servers(path);
         self.update_topology(path);
 
@@ -470,7 +472,7 @@ impl ChatClientDanylo {
 
     /// ###### Updates the routes and servers based on the provided path.
     /// If the path leads to a server, it updates the routing table and the servers list.
-    fn update_routes_and_servers(&mut self, path: &[(NodeId, NodeType)]) {
+    fn update_routes_and_servers(&mut self, path: &[Node]) {
         if let Some((id, NodeType::Server)) = path.last() {
             if self
                 .routes
@@ -494,7 +496,7 @@ impl ChatClientDanylo {
 
     /// ###### Updates the network topology based on the provided path.
     /// Adds connections between nodes in both directions.
-    fn update_topology(&mut self, path: &[(NodeId, NodeType)]) {
+    fn update_topology(&mut self, path: &[Node]) {
         for i in 0..path.len() - 1 {
             let current = path[i].0;
             let next = path[i + 1].0;
@@ -515,7 +517,7 @@ impl ChatClientDanylo {
 
     /// ###### Initiates the discovery process to find available servers and clients.
     /// Clears current data structures and sends a flood request to all neighbors.
-    pub fn discovery(&mut self) {
+    pub fn discovery(&mut self) -> Result<(), String> {
         info!("Starting discovery process");
 
         // Clear all current data structures related to topology.
@@ -544,10 +546,13 @@ impl ChatClientDanylo {
             flood_request,
         );
 
+        let result = Ok(());
+
         // Attempt to send the flood request to all neighbors.
         for sender in &self.packet_send {
             if let Err(_) = sender.1.send(packet.clone()) {
-                error!("Failed to send FloodRequest to the drone with id {}.", sender.0);
+                error!("Failed to send FloodRequest to the drone {}.", sender.0);
+                return Err(format!("Failed to send FloodRequest to the drone {}.", sender.0));
             } else {
                 info!("FloodRequest sent to the drone with id {}.", sender.0);
             }
@@ -555,6 +560,8 @@ impl ChatClientDanylo {
             // Send the 'PacketSent' event to the simulation controller
             self.send_event(ClientEvent::PacketSent(packet.clone()));
         }
+
+        result
     }
 
     /// ###### Requests the type of specified server.
@@ -595,7 +602,7 @@ impl ChatClientDanylo {
 
     /// ###### Requests the list of clients from a specified server.
     /// Sends a query to the server and waits for a response.
-    pub fn request_users_list(&mut self, server_id: NodeId) -> Result<(), String> {
+    pub fn request_clients_list(&mut self, server_id: NodeId) -> Result<(), String> {
         info!("Requesting clients list from server {}", server_id);
 
         let result = self.create_and_send_message(Query::AskListClients, server_id);
