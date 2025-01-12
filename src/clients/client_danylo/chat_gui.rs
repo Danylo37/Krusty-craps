@@ -40,7 +40,7 @@ pub struct ChatGUI<'a> {
     current_server: NodeId,
     current_message: Option<String>,
     current_message_status: Option<String>,
-    receive_responses: bool,
+    discovery_result: String,
     wait_response: bool
 }
 
@@ -76,7 +76,7 @@ impl <'a> ChatGUI<'a> {
             current_server: 0,
             current_message: Some(String::new()),
             current_message_status: None,
-            receive_responses: false,
+            discovery_result: String::new(),
             wait_response: false,
         }
     }
@@ -405,35 +405,50 @@ impl <'a> ChatGUI<'a> {
         ui.label("Starting discovery...");
         match self.client.discovery() {
             Ok(_) => {
-                self.receive_responses = true;
+                self.wait_response = true;
             }
             Err(error) => {
-                ui.label(format!("Failed to discover: {}", error));
+                self.discovery_result = format!("Failed to discover: {}", error);
             }
         }
 
-        while self.receive_responses {  // todo add timeout
-            for response in &self.client.flood_responses {
-                ui.label(Self::get_response_string(response));
-            }
+        if self.wait_response {
+            thread::sleep(std::time::Duration::from_secs(1));
+            self.update_discovery_result();
+            self.wait_response = false;
         }
+
+        ui.label(&self.discovery_result);
 
         ui.separator();
         if ui.button("Back").clicked() {
-            self.receive_responses = false;
+            self.discovery_result = String::new();
             self.current_menu = Menu::Main;
         }
     }
 
+    fn update_discovery_result(&mut self) {
+        let responses = &self.client.flood_responses;
+        let result = if responses.is_empty() {
+            "No responses received.".to_string()
+        } else {
+            let mut result = String::from("Response received:\n");
+            for response in responses {
+                result.push_str(&Self::get_response_string(response));
+            }
+            result.push_str("Discovery finished successfully!");
+            result
+        };
+        self.discovery_result = result;
+    }
+
     fn get_response_string(response: &(Node, Vec<Node>)) -> String {
-        let sender_id = response.0.0;
-        let sender_type = match response.0.1 {
+        let (sender_id, sender_type) = response.0;
+        let sender_type_str = match sender_type {
             NodeType::Client => "Client",
             NodeType::Drone => "Drone",
             NodeType::Server => "Server",
         };
-        let path = response.1.clone();
-
-        format!("Response from {} {} with path: {:?}", sender_type, sender_id, path)
+        format!("From {} {} with path: {:?}\n", sender_type_str, sender_id, response.1)
     }
 }
