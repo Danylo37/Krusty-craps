@@ -91,14 +91,20 @@
 <!-- Message Display -->
 <div id="messages"></div>
 
+<!-- Include the MessagePack library -->
+<script src="msgpack.min.js"></script>
+
 <script>
+    // Debug: Verify the MessagePack library is loaded
+    console.log('MessagePack library:', window.MessagePack);
+
     const panelsContainer = document.getElementById("messages"); // Container for all panels
     const panels = {}; // Object to track panels by node_id
     const selectedNodes = new Set(); // Set to track selected nodes
     let isSelectionMode = false; // Flag to track selection mode
 
     // Initialize MessagePack decoder
-    const msgpack = require("msgpack-lite");
+    const msgpack = window.MessagePack;
 
     // Create a WebSocket connection to the Rust server
     const ws = new WebSocket('ws://127.0.0.1:8000');
@@ -171,20 +177,32 @@
     }
 
     // Handle WebSocket messages
-    ws.onmessage = (event) => {
+    // Handle WebSocket messages
+    ws.onmessage = async (event) => {
         try {
-            console.log('Message received');
+            // Debug: Log the received event data type
+            console.log('Received WebSocket message type:', typeof event.data);
+
+            // Ensure the data is a Blob before processing
+            if (!(event.data instanceof Blob)) {
+                throw new Error('WebSocket message is not a Blob.');
+            }
+
+            // Convert Blob to ArrayBuffer
+            const arrayBuffer = await event.data.arrayBuffer();
+            console.log('Converted ArrayBuffer:', arrayBuffer);
 
             // Decode the MessagePack binary data
-            const data = msgpack.decode(new Uint8Array(event.data));
+            const uint8Array = new Uint8Array(arrayBuffer);
+            const data = msgpack.decode(uint8Array);
+            console.log('Decoded data:', data);
 
-            // Check if a panel already exists for this node
+            // Update the DOM with the decoded data
             let panel = panels[data.node_id];
             if (!panel) {
-                // Create a new panel if it doesn't exist
                 panel = document.createElement("div");
                 panel.className = "panel";
-                panel.dataset.nodeId = data.node_id; // Store node ID in dataset
+                panel.dataset.nodeId = data.node_id;
                 panel.innerHTML = `
                 <div class="selection-square" onclick="toggleNodeSelection('${data.node_id}')"></div>
                 <h2>Node ${data.node_id}</h2>
@@ -195,33 +213,21 @@
             `;
                 panelsContainer.appendChild(panel);
                 panels[data.node_id] = panel;
+                console.log('Created new panel for node:', data.node_id);
             }
 
             // Update the displayed data for this node
-            const sessionSpan = document.getElementById(`session-${data.node_id}`);
-            sessionSpan.textContent = data.session_id;
-
-            const connectedNodesSpan = document.getElementById(`connected-nodes-${data.node_id}`);
-            connectedNodesSpan.textContent = Array.from(data.connected_node_ids).join(', ');
-
-            const routingTablePre = document.getElementById(`routing-table-${data.node_id}`);
-            routingTablePre.textContent = JSON.stringify(data.routing_table, null, 2);
-
-            const messageChatPre = document.getElementById(`message-chat-${data.node_id}`);
-            messageChatPre.textContent = JSON.stringify(data.message_chat, null, 2);
-
-            // Update selection square visibility if in selection mode
-            if (isSelectionMode) {
-                const square = panel.querySelector('.selection-square');
-                square.style.display = 'block';
-            }
+            document.getElementById(`session-${data.node_id}`).textContent = data.session_id;
+            document.getElementById(`connected-nodes-${data.node_id}`).textContent = Array.from(data.connected_node_ids).join(', ');
+            document.getElementById(`routing-table-${data.node_id}`).textContent = JSON.stringify(data.routing_table, null, 2);
+            document.getElementById(`message-chat-${data.node_id}`).textContent = JSON.stringify(data.message_chat, null, 2);
         } catch (e) {
             console.error('Error processing message:', e);
 
             // Handle invalid or plain text messages
             const msgDiv = document.createElement("div");
             msgDiv.className = "message error";
-            msgDiv.textContent = `Invalid message: ${event.data}`;
+            msgDiv.textContent = `Error decoding message: ${e.message}`;
             panelsContainer.appendChild(msgDiv);
         }
     };
@@ -243,6 +249,16 @@
         msgDiv.className = "message error";
         msgDiv.textContent = 'WebSocket connection closed.';
         panelsContainer.appendChild(msgDiv);
+    };
+
+    // Handle WebSocket connection open
+    ws.onopen = () => {
+        console.log('WebSocket connection established');
+    };
+
+    // Handle WebSocket errors
+    ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
     };
 </script>
 </body>

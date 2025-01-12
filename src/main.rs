@@ -10,6 +10,7 @@ mod clients;
 pub mod ui_traits;
 mod connecting_websocket;
 
+use std::thread;
 use serde::{Deserialize, Serialize};
 use futures_util::{SinkExt, StreamExt};
 use crossbeam_channel;
@@ -34,16 +35,21 @@ async fn main() {
     // Network initializer instance
     let mut my_net = network_initializer::NetworkInitializer::new(tx.clone());
     my_net.initialize_from_file("input.toml");
-
     // Spawn a task for writing messages to the WebSocket
     tokio::spawn(async move {
-        while let Some(msg) = rx.recv().await {
-            if let Err(err) = write.send(Message::Binary(msg)).await {
-                eprintln!("Error writing to WebSocket: {:?}", err);
-                break;
+        loop {
+            while let Some(msg) = rx.recv().await {
+                eprintln!("I'm running"); // Debug
+                if let Err(err) = write.send(Message::Binary(msg)).await {
+                    eprintln!("Error writing to WebSocket: {:?}", err);
+                    break;
+                }
             }
         }
     });
+
+
+
 
 
     // Keep the program running to simulate clients sending data

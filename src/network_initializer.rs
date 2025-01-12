@@ -149,8 +149,8 @@ impl NetworkInitializer {
         self.connect_nodes(&mut controller, topology);
 
         // Start the user interface
-        println!("Starting User Interface");
-        start_ui(controller);
+        /*println!("Starting User Interface");
+        start_ui(controller);*/
     }
 
     ///DRONES GENERATION
@@ -293,7 +293,7 @@ impl NetworkInitializer {
 
                 ClientType::Chat=> {
                     client_type = ClientType::Chat;
-                    self.create_and_spawn_client::<ChatClientDanylo>(client_params);
+                    self.create_and_spawn_client_with_monitoring::<ClientChen>(self.sender_to_gui.clone(),client_params);
                     self.client_channels.insert(client.id, (packet_sender , ClientType::Chat));
                 }
             };

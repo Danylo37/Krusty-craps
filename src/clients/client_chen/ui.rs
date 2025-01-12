@@ -7,6 +7,7 @@ use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use tokio::select;
 use tokio::sync::mpsc;
+use tokio::time::interval;
 
 #[derive(Debug, Serialize)]
 pub struct DisplayData {
@@ -40,27 +41,14 @@ impl Monitoring for ClientChen {
             let packet_crossbeam_rx = self.communication_tools.packet_recv.clone();
             tokio::spawn(crossbeam_to_tokio_bridge(packet_crossbeam_rx, packet_tokio_tx));
 
+            let mut interval = interval(std::time::Duration::from_millis(10));
             loop {
                 select! {
-                    // Handle controller commands from the tokio mpsc channel
-                    command_res = controller_tokio_rx.recv() => {
-                        if let Some(command) = command_res {
-                            self.handle_controller_command(command);
-                        } else {
-                            eprintln!("Error receiving controller command");
-                        }
-                    },
-                    // Handle incoming packets from the tokio mpsc channel
-                    packet_res = packet_tokio_rx.recv() => {
-                        if let Some(packet) = packet_res {
-                            self.handle_received_packet(packet);
-                        } else {
-                            eprintln!("Error receiving packet");
-                        }
-                    },
+                    biased;
                     // Handle periodic tasks
-                    _ = tokio::time::sleep(std::time::Duration::from_millis(10)) => {
-                        // Handle fragments and send packets
+                    _ = interval.tick() => {
+                        eprintln!("Handling periodic tasks"); // Debug
+                        // Handle fragments and send packet
                         self.handle_fragments_in_buffer_with_checking_status();
                         self.send_packets_in_buffer_with_checking_status(); // This can use crossbeam's send directly
                         self.update_routing_checking_status();
@@ -95,6 +83,7 @@ impl Monitoring for ClientChen {
                         // Serialize the DisplayData to MessagePack binary
                         match to_vec(&display_data) {
                             Ok(encoded) => {
+                                eprintln!("Sending msg encoded");
                                 // Send the binary data over the WebSocket
                                 if sender_to_gui.send(encoded).await.is_err() {
                                     eprintln!("Error sending data for Node {}", self.metadata.node_id);
@@ -105,6 +94,24 @@ impl Monitoring for ClientChen {
                             }
                         }
                     },
+
+                    // Handle incoming packets from the tokio mpsc channel
+                    packet_res = packet_tokio_rx.recv() => {
+                        if let Some(packet) = packet_res {
+                            self.handle_received_packet(packet);
+                        } else {
+                            eprintln!("Error receiving packet");
+                        }
+                    },
+                    // Handle controller commands from the tokio mpsc channel
+                    command_res = controller_tokio_rx.recv() => {
+                        if let Some(command) = command_res {
+                            self.handle_controller_command(command);
+                        } else {
+                            eprintln!("Error receiving controller command");
+                        }
+                    },
+
                 }
             }
         }
