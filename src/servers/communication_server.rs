@@ -117,6 +117,15 @@ impl Monitoring for CommunicationServer {
                                 ServerCommand::RemoveSender(id) => {
                                     self.packet_send.remove(&id);
                                 }
+                                ServerCommand::ShortcutPacket(packet) => {
+                                     match packet.pack_type {
+                                        PacketType::Nack(nack) => self.handle_nack(nack, packet.session_id),
+                                        PacketType::Ack(ack) => self.handle_ack(ack),
+                                        PacketType::MsgFragment(fragment) => self.handle_fragment(fragment, packet.routing_header ,packet.session_id),
+                                        PacketType::FloodRequest(flood_request) => self.handle_flood_request(flood_request, packet.session_id),
+                                        PacketType::FloodResponse(flood_response) => self.handle_flood_response(flood_response),
+                                    }
+                                }
                             }
                         } else {
                             eprintln!("Error receiving controller command");
