@@ -35,6 +35,7 @@ pub trait Router{
 
 pub trait CommunicationTools{
     fn get_discovered_servers_from_topology(&mut self) -> HashSet<ServerId>;
+    fn get_registered_servers(&mut self) -> HashSet<ServerId>;
     fn get_edge_nodes_from_topology(&mut self) -> HashSet<NodeId>;
     fn get_communicable_clients_from_registered_servers(&mut self) -> HashSet<ClientId>;
     fn get_communicable_nodes(&mut self) -> HashSet<NodeId>;

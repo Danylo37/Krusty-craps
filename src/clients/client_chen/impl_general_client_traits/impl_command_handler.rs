@@ -1,6 +1,7 @@
-use crate::clients::client_chen::{ClientChen, CommandHandler};
+use crate::clients::client_chen::{ClientChen, CommandHandler, SpecificInfo};
 use crate::clients::client_chen::prelude::*;
 use crate::clients::client_chen::general_client_traits::*;
+use crate::general_use::ServerType;
 
 impl CommandHandler for ClientChen{
     fn handle_controller_command(&mut self, command: ClientCommand) {
@@ -11,7 +12,33 @@ impl CommandHandler for ClientChen{
             ClientCommand::RemoveSender(target_node_id) => {
                 self.communication_tools.packet_send.remove(&target_node_id);
             }
-            _ => {}
+
+            ClientCommand::StartFlooding => {
+                self.do_flooding();
+            }
+            ClientCommand::GetKnownServers => {
+                let servers: Vec<(ServerId, ServerType, bool)> = self
+                    .get_discovered_servers_from_topology()
+                    .iter()
+                    .map(|server_id| {
+                        self.network_info.topology.get(server_id).map_or(
+                            // Default to undefined server info if not found
+                            (*server_id, ServerType::Undefined, false),
+                            |server| {
+                                if let SpecificInfo::ServerInfo(server_info) = &server.specific_info {
+                                    let server_type = server_info.server_type;
+                                    let registered = self.get_registered_servers();
+                                    (*server_id, server_type, registered.contains(server_id))
+                                } else {
+                                    (*server_id, ServerType::Undefined, false)
+                                }
+                            },
+                        )
+                    })
+                    .collect();
+                self.send_events(ClientEvent::KnownServers(servers));
+            }
+            _=>{}
         }
     }
 }
