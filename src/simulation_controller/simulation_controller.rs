@@ -256,6 +256,10 @@ impl SimulationController {
         }
     }
 
+    pub fn remove_sender() {
+        //TODO
+    }
+
 
     pub fn set_packet_drop_rate(&mut self, drone_id: NodeId, pdr: f32) {
         if let Some(command_sender) = self.command_senders_drones.get(&drone_id) {
@@ -295,6 +299,19 @@ It uses the command_senders map to find the appropriate sender channel.
             .iter()
             .map(|(&id, (_, server_type))| (*server_type, id))
             .collect()
+    }
+
+    pub fn request_known_servers(&self, client_id: NodeId) -> Result<(), String> {
+        if let Some((client_command_sender, _)) = self.command_senders_clients.get(&client_id) { // Access sender from tuple
+
+            if let Err(e) = client_command_sender.send(ClientCommand::GetKnownServers) { // Add this to ClientCommand!
+                return Err(format!("Failed to send GetKnownServers command to client {}: {:?}", client_id, e));
+            }
+            //handle the ClientEvent::KnownServers response
+            Ok(())
+        } else {
+            Err(format!("Client with ID {} not found", client_id))
+        }
     }
 
     pub fn get_server_type(&self, node_id: NodeId) -> ServerType {

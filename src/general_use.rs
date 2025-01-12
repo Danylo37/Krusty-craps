@@ -45,7 +45,8 @@ pub enum PacketStatus{
 #[derive(Debug, Clone)]
 pub enum ServerCommand {
     RemoveSender(NodeId),
-    AddSender(NodeId, Sender<Packet>)
+    AddSender(NodeId, Sender<Packet>),
+    ShortcutPacket(Packet),
 }
 
 ///Server-Controller
@@ -63,6 +64,8 @@ pub enum ClientCommand {
     AskTypeTo(ServerId),
     RequestText(NodeId),
     RequestMedia(NodeId),
+    ShortcutPacket(Packet),
+    GetKnownServers,
 }
 
 
@@ -73,6 +76,7 @@ pub enum ClientEvent {
     SenderAdded(NodeId),
     DoingFlood(FloodId),
     FloodIsFinished(FloodId),
+    KnownServers(Vec<(NodeId, ServerType)>),
 }
 
 //Queries (Client -> Server)
