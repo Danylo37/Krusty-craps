@@ -1,10 +1,14 @@
 use crossbeam_channel::{select_biased, Receiver, Sender};
-use std::collections::HashMap;
-use std::fmt::Debug;
-use std::future::Future;
-use tokio::sync::mpsc;
-use tokio::select;
-//use eframe::egui::accesskit::NodeId as ui_node_id;
+use std::{
+    collections::HashMap,
+    fmt::Debug,
+    fmt::future::Future,
+};
+use tokio::{
+    sync::mpsc,
+    select,
+};
+
 use wg_2024::{
     network::{NodeId},
     packet::{
@@ -13,9 +17,13 @@ use wg_2024::{
     },
 };
 use crate::general_use::{Message, Query, Response, ServerCommand, ServerEvent, ServerType};
-use crate::servers::media_server::MediaServer;
-use crate::servers::text_server::TextServer;
-use crate::ui_traits::{crossbeam_to_tokio_bridge, Monitoring};
+
+//UI
+use crate::ui_traits::{
+    crossbeam_to_tokio_bridge,
+    Monitoring
+};
+
 use super::server::CommunicationServer as CharTrait;
 use super::server::Server as MainTrait;
 
@@ -83,7 +91,7 @@ impl Monitoring for CommunicationServer {
     fn run_with_monitoring(
         &mut self,
         sender_to_gui: mpsc::Sender<String>,
-    ) -> impl Future<Output = ()> + Send {
+    ) -> impl Future<Output=()> + Send {
         async move {
             // Create tokio mpsc channels for receiving controller commands and packets
             let (controller_tokio_tx, mut controller_tokio_rx) = mpsc::channel(32);
@@ -136,6 +144,9 @@ impl Monitoring for CommunicationServer {
         }
     }
 }
+}
+}
+
 impl MainTrait for CommunicationServer{
     fn get_id(&self) -> NodeId{ self.id }
     fn get_server_type(&self) -> ServerType{ ServerType::Communication }
