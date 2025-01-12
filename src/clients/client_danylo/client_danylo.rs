@@ -158,10 +158,16 @@ impl ChatClientDanylo {
             }
             // -------------- for tests -------------- \\
             ClientCommand::StartFlooding => {
-                self.discovery();
+                match self.discovery() {
+                    Ok(_) => info!("Discovery process started successfully"),
+                    Err(err) => error!("Failed to start discovery process: {}", err),
+                };
             }
             ClientCommand::AskTypeTo(server_id) => {
-                self.request_server_type(server_id);
+                match self.request_server_type(server_id) {
+                    Ok(_) => info!("Server type request sent successfully"),
+                    Err(err) => error!("Failed to request server type: {}", err),
+                };
             }
             // -------------- for tests -------------- \\
             _ => {}
