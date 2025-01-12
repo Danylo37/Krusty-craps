@@ -64,6 +64,7 @@ impl Client for ChatClientDanylo {
         controller_send: Sender<ClientEvent>,
         controller_recv: Receiver<ClientCommand>,
     ) -> Self {
+        info!("Starting ChatClientDanylo with ID: {}", id);
         Self {
             id,
             packet_send,
@@ -87,6 +88,7 @@ impl Client for ChatClientDanylo {
     }
 
     fn run(&mut self) {
+        info!("Running ChatClientDanylo with ID: {}", self.id);
         loop {
             select_biased! {
                 recv(self.controller_recv) -> command_res => {
