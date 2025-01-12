@@ -149,10 +149,13 @@ impl ChatClientDanylo {
             }
             ClientCommand::GetKnownServers => {
                 debug!("Handling GetKnownServers command");
-                let servers: Vec<(NodeId, ServerType)> = self
+                let servers: Vec<(NodeId, ServerType, bool)> = self
                     .servers
                     .iter()
-                    .map(|(&id, &server_type)| (id, server_type))
+                    .map(|(&id, &server_type)| (
+                        id,
+                        server_type,
+                        *self.is_registered.get(&id).unwrap_or(&false)))
                     .collect();
                 self.send_event(ClientEvent::KnownServers(servers));
             }

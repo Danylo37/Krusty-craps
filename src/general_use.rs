@@ -72,7 +72,7 @@ pub enum ClientCommand {
 #[derive(Debug, Clone)]
 pub enum ClientEvent {
     PacketSent(Packet),
-    KnownServers(Vec<(NodeId, ServerType)>),
+    KnownServers(Vec<(NodeId, ServerType, bool)>),
 }
 
 //Queries (Client -> Server)
