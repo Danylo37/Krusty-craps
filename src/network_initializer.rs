@@ -1,6 +1,6 @@
 //Outside libraries
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     env, fs, thread,
 };
 use tokio::sync::Mutex;
@@ -20,11 +20,16 @@ use wg_2024::{
 
 //Inner libraries
 use crate::{
-    clients::client::Client as TraitClient,
-    general_use::{ClientEvent, ServerEvent, ClientType, ServerType, DroneId, UsingTimes},
-    servers::{communication_server::CommunicationServer, text_server::TextServer, media_server::MediaServer, server::Server as ServerTrait},
-    simulation_controller::SimulationController,
-    ui::start_ui};
+    clients::{
+        client::Client as TraitClient,
+        client_chen::ClientChen,
+        client_chen::web_browser_client_traits::WebBrowserClientTrait,
+        client_danylo::ChatClientDanylo,
+    },
+    general_use::{ClientId, ClientCommand, ClientEvent, ServerEvent, ClientType, ServerType, DroneId, UsingTimes},
+    servers::{content, communication_server::CommunicationServer, text_server::TextServer, media_server::MediaServer, server::Server as ServerTrait},
+    simulation_controller::SimulationController
+};
 
 
 //Drones
@@ -37,13 +42,13 @@ use fungi_drone::FungiDrone;
 use bagel_bomber::BagelBomber;
 use skylink::SkyLinkDrone;
 use RF_drone::RustAndFurious;
-use crate::clients::client_chen::ClientChen;
-use crate::clients::client_chen::web_browser_client_traits::WebBrowserClientTrait;
-use crate::ui_traits::Monitoring;
-use crate::clients::client_danylo::ChatClientDanylo;
-use crate::general_use::{ClientCommand, ClientId};
-use crate::servers::content;
 //use bobry_w_locie::drone::BoberDrone;
+
+
+//UI
+use crate::ui_traits::Monitoring;
+use crate::ui::start_ui;
+
 
 
 //Drone Enum + iterator over it
@@ -151,8 +156,8 @@ impl NetworkInitializer {
         self.connect_nodes(&mut controller, topology);
 
         // Start the user interface
-        /*println!("Starting User Interface");
-        start_ui(controller);*/
+        println!("Starting User Interface");
+        start_ui(controller);
     }
 
     ///DRONES GENERATION
@@ -412,7 +417,7 @@ impl NetworkInitializer {
             let mut server_instance_text: Option<TextServer>= None;
             let mut server_instance_media: Option<MediaServer>= None;
 
-            if (random::<u8>()%2 == 0){
+            if random::<u8>()%2 == 0{
                 server_type = ServerType::Communication;
 
                 server_instance_comm = Some(CommunicationServer::new(
