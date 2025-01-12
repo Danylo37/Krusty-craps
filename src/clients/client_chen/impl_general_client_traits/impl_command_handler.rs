@@ -17,6 +17,9 @@ impl CommandHandler for ClientChen{
                 self.do_flooding();
             }
             ClientCommand::GetKnownServers => {
+                // Get the registered servers before the closure
+                let registered_servers = self.get_registered_servers();
+
                 let servers: Vec<(ServerId, ServerType, bool)> = self
                     .get_discovered_servers_from_topology()
                     .iter()
@@ -27,8 +30,8 @@ impl CommandHandler for ClientChen{
                             |server| {
                                 if let SpecificInfo::ServerInfo(server_info) = &server.specific_info {
                                     let server_type = server_info.server_type;
-                                    let registered = self.get_registered_servers();
-                                    (*server_id, server_type, registered.contains(server_id))
+                                    let is_registered = registered_servers.contains(server_id);
+                                    (*server_id, server_type, is_registered)
                                 } else {
                                     (*server_id, ServerType::Undefined, false)
                                 }
