@@ -1,4 +1,4 @@
-use crossbeam_channel::{Receiver, Sender};
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use std::collections::HashMap;
 use std::thread::sleep;
 use std::time::Duration;
@@ -117,8 +117,6 @@ impl SimulationController {
         Ok(drone)
     }
 
-
-
     /// Processes incoming events from drones.
     /// This function handles `PacketSent`, `PacketDropped`, and `ControllerShortcut` events.
     fn process_packet_sent_events(&mut self) {
@@ -138,40 +136,40 @@ impl SimulationController {
     }
 
     fn process_controller_shortcut_events(&mut self) {
-        if let Ok(event) = self.drone_event_receiver.try_recv() { //No loops
-            if let DroneEvent::ControllerShortcut(packet) = event {
+        if let Ok(event) = self.drone_event_receiver.try_recv() {  // Receive event or continue if none is available
+            if let DroneEvent::ControllerShortcut(packet) = event {   // Check event type
+
                 match packet.pack_type {
                     PacketType::Ack(_) | PacketType::Nack(_) | PacketType::FloodResponse(_) => {
-                        if let Some(destination) = self.get_destination_from_packet(&packet) {
-                            // Determine the correct command sender based on destination node type
-                            let command_sender = if self.command_senders_drones.contains_key(&destination) {
-                                // Destination is a drone - send directly
-                                self.packet_senders.get(&destination).cloned()
+                        if let Some(destination) = self.get_destination_from_packet(&packet) {  // Try to get destination
 
-                            } else if self.command_senders_clients.contains_key(&destination) {
-                                // Destination is a client - send to client's packet sender
-                                self.packet_senders.get(&destination).cloned()
+                            // Determine where to send the packet based on the destination ID and node type
+                            if self.command_senders_clients.contains_key(&destination) {          //If it's client
 
-                            } else if self.command_senders_servers.contains_key(&destination) {
-                                // Destination is a server
-                                self.packet_senders.get(&destination).cloned()
+                                if let Some((client_sender, _)) = self.command_senders_clients.get(&destination) {
+                                    if let Err(e) = client_sender.send(ClientCommand::ShortcutPacket(packet.clone())) {
+                                        eprintln!("Error sending to client {}: {:?}", destination, e);
+                                    }
+                                } else {
 
-                            } else {
-                                None // Destination not found or invalid type
-                            };
-
-                            if let Some(sender) = command_sender {
-                                if let Err(e) = sender.send(packet.clone()) {
-                                    eprintln!("Failed to send packet to destination {}: {:?}", destination, e);
+                                    eprintln!("No sender found for client {}", destination);
+                                }
+                            } else if self.command_senders_servers.contains_key(&destination) {   // If it's server
+                                if let Some((server_sender, _)) = self.command_senders_servers.get(&destination) {
+                                    if let Err(e) = server_sender.send(ServerCommand::ShortcutPacket(packet.clone())) {
+                                        eprintln!("Error sending to server {}: {:?}", destination, e);
+                                    }
+                                } else {
+                                    eprintln!("No sender found for server {}", destination);
                                 }
                             } else {
-                                eprintln!("Destination {} not found or invalid node type", destination);
+                                eprintln!("Invalid destination or unknown node type: {}", destination);
                             }
                         } else {
                             eprintln!("Could not determine destination for ControllerShortcut");
                         }
                     }
-                    _ => eprintln!("Unexpected packet type in ControllerShortcut: {:?}", packet.pack_type), // Log unexpected types
+                    _ => eprintln!("Unexpected packet type in ControllerShortcut: {:?}", packet.pack_type),
                 }
             }
         }
@@ -256,10 +254,44 @@ impl SimulationController {
         }
     }
 
-    pub fn remove_sender() {
-        //TODO
-    }
+    pub fn remove_sender(&mut self, node_id: NodeId, node_type: NodeType, connected_node_id: NodeId) -> Result<(), String> {
+        match node_type {
+            NodeType::Drone => {
+                if let Some(command_sender) = self.command_senders_drones.get(&node_id) {
+                    if let Err(e) = command_sender.send(DroneCommand::RemoveSender(connected_node_id)) {  // Send command, return error if fails
+                        return Err(format!("Failed to send RemoveSender command to drone {}: {:?}", node_id, e));
+                    }
+                    Ok(())
 
+                } else {
+
+                    Err(format!("Drone with ID {} not found", node_id))  // Return error if no sender
+                }
+            }
+            NodeType::Client => {
+                if let Some((command_sender, _)) = self.command_senders_clients.get(&node_id) {
+                    if let Err(e) = command_sender.send(ClientCommand::RemoveSender(connected_node_id)) {
+                        return Err(format!("Failed to send RemoveSender command to client {}: {:?}", node_id, e));
+                    }
+                    Ok(())
+                } else {
+                    Err(format!("Client with ID {} not found", node_id))
+                }
+            }
+            NodeType::Server => {
+
+                if let Some((command_sender, _)) = self.command_senders_servers.get(&node_id) {
+
+                    if let Err(e) = command_sender.send(ServerCommand::RemoveSender(connected_node_id)) {
+                        return Err(format!("Failed to send RemoveSender command to server {}: {:?}", node_id, e));
+                    }
+                    Ok(())
+                } else {
+                    Err(format!("Server with ID {} not found", node_id))
+                }
+            }
+        }
+    }
 
     pub fn set_packet_drop_rate(&mut self, drone_id: NodeId, pdr: f32) {
         if let Some(command_sender) = self.command_senders_drones.get(&drone_id) {
@@ -281,9 +313,19 @@ It uses the command_senders map to find the appropriate sender channel.
                 return Err(format!("Failed to send Crash command to drone {}: {:?}", drone_id, e));
             }
             Ok(())
-
         } else {
             Err(format!("Drone {} not found in controller", drone_id))
+        }
+    }
+
+    pub fn run_client_ui(&self, client_id: NodeId) -> Result<(), String> {
+        if let Some((command_sender, _)) = self.command_senders_clients.get(&client_id) {
+            if let Err(e) = command_sender.send(ClientCommand::RunUI) {
+                return Err(format!("Failed to send RunUI command to client {}: {:?}", client_id, e));
+            }
+            Ok(())
+        } else {
+            Err(format!("Client with ID {} not found", client_id))
         }
     }
 
@@ -301,16 +343,62 @@ It uses the command_senders map to find the appropriate sender channel.
             .collect()
     }
 
-    pub fn request_known_servers(&self, client_id: NodeId) -> Result<(), String> {
-        if let Some((client_command_sender, _)) = self.command_senders_clients.get(&client_id) { // Access sender from tuple
+    pub fn request_known_servers(&mut self, client_id: NodeId) -> Result<(), String> {
+        if let Some((client_command_sender, _)) = self.command_senders_clients.get(&client_id) {
 
-            if let Err(e) = client_command_sender.send(ClientCommand::GetKnownServers) { // Add this to ClientCommand!
-                return Err(format!("Failed to send GetKnownServers command to client {}: {:?}", client_id, e));
+            if client_command_sender.send(ClientCommand::GetKnownServers).is_err() { // No need to check error here, client should handle it
+                return Err(format!("Client {} disconnected", client_id));//Return err if the client disconnected
             }
-            //handle the ClientEvent::KnownServers response
-            Ok(())
+
+            //wait for KnownServers event
+            let timeout = Duration::from_secs(1);
+
+            //Using recv_client_event_timeout
+            if let Some(event) = self.recv_client_event_timeout(timeout) {
+                match event {
+                    ClientEvent::KnownServers(servers) => {
+                        self.update_known_servers(servers);
+                        Ok(())
+                    },
+                    _ => Err("Unexpected client event".to_string()),
+                }
+            } else {
+                Err(format!("Timeout waiting for KnownServers from client {}", client_id))
+            }
         } else {
             Err(format!("Client with ID {} not found", client_id))
+        }
+    }
+
+
+    fn recv_client_event_timeout(&self, timeout: Duration) -> Option<ClientEvent> {
+        let start = std::time::Instant::now();
+
+        loop {
+            if let Ok(event) = self.client_event_receiver.try_recv() {
+                return Some(event);
+            }
+
+            if start.elapsed() >= timeout {
+                return None; // Timeout
+            }
+
+            sleep(Duration::from_millis(10));
+        }
+
+    }
+
+
+
+    fn update_known_servers(&mut self, servers: Vec<(NodeId, ServerType, bool)>) {
+        for (server_id, server_type, _) in servers { // Iterate over servers and their types
+
+            if let Some((sender, _)) = self.command_senders_servers.get(&server_id) { // Check if server already exists in controller
+                self.command_senders_servers.insert(server_id, (sender.clone(), server_type)); //Update server type
+            } else {                                                                           //If server not found create it
+                let (sender, receiver) = unbounded();                                           //Create channels for server
+                self.command_senders_servers.insert(server_id, (sender, server_type));           //Insert server in controller
+            }
         }
     }
 
@@ -321,14 +409,11 @@ It uses the command_senders map to find the appropriate sender channel.
     ///This is the function for asking the server it's type, given the id of the server
     pub fn ask_which_type(&self, client_id: NodeId, server_id: NodeId) -> Result<ServerType, String> {
 
-
         if let Some((client_command_sender, _)) = self.command_senders_clients.get(&client_id) {
             if let Err(e) = client_command_sender.send(ClientCommand::AskTypeTo(server_id)) {
                 return Err(format!("Failed to send AskServerType command to client {}: {:?}", client_id, e));
             }
-
             return Ok(self.get_server_type(server_id)); // Return the server type
-
         }
         Err(format!("Client with id {} not found", client_id))
     }

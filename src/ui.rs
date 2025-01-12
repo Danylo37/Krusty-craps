@@ -1,6 +1,3 @@
-
-//UI made by lillo since CHen can't code
-
 use std::io;
 use wg_2024::network::NodeId;
 use crate::simulation_controller::SimulationController;
@@ -34,7 +31,6 @@ fn crash_drone(controller: &mut SimulationController) {
 
     io::stdin().read_line(&mut input).expect("Failed to read input");
 
-
     let drone_id: NodeId = match input.trim().parse() {
         Ok(id) => id,
         Err(_) => {
@@ -56,7 +52,6 @@ fn ask_input_user() -> usize {
             return user_input;
         }
     }
-
 }
 fn take_user_input_and_parse() -> usize {
     let mut user_input = String::new();
@@ -82,7 +77,6 @@ fn take_user_input() -> String {
 fn use_clients(controller: &mut SimulationController) {
     println!("\nAvailable Clients:\n");
 
-
     let clients_with_types = controller.get_list_clients();
     if clients_with_types.is_empty() {
         println!("No clients registered.");
@@ -92,13 +86,9 @@ fn use_clients(controller: &mut SimulationController) {
     let mut client_options = clients_with_types.clone(); // Clone to sort
     client_options.sort_by_key(|(_, id)| *id);
 
-
-
     for (i, (client_type, client_id)) in client_options.iter().enumerate() {
         println!("{}. {} Client with Node ID {}", i + 1, client_type, client_id); // Display type
     }
-
-
 
     let user_choice = ask_input_user();
 
@@ -121,57 +111,49 @@ fn choose_server(client_type: ClientType, client_id: NodeId, controller: &mut Si
     loop {  // Loop for server selection
         println!("\nChoose action for {} Client {}:", client_type, client_id);
 
+        let server_options: Vec<(ServerType, NodeId)> = controller.command_senders_servers // Get servers from controller
+            .iter()
+            .map(|(&id, &(_, server_type))| (server_type, id))
+            .collect();
 
-        let servers_with_types = controller.get_list_servers();
+        if server_options.is_empty(){  // If there are no servers, only display the Discover option
 
-
-
-        if servers_with_types.is_empty(){
             println!("No servers found. Press Enter to discover.");
-
-
             let mut input = String::new();
-
             io::stdin().read_line(&mut input).expect("Failed to read input");
 
-            controller.start_flooding_on_client(client_id).expect("panic message");
-            continue;
-
-
+            if let Err(e) = controller.start_flooding_on_client(client_id) {       // Start flooding to find servers and exit
+                eprintln!("Error starting flooding: {}", e);
+            }
+            return; // Exit after starting flooding - this way, the client can proceed. Use break if you need to continue the loop for server selection.
         }
 
-
-        for (i, (server_type, server_id)) in servers_with_types.iter().enumerate() {
+        for (i, (server_type, server_id)) in server_options.iter().enumerate() {
             println!("{}. {} Server with ID {}", i + 1, server_type, server_id);
         }
-        println!("\nChoose a server (or 0 to go back):");
 
+        println!("\nChoose a server (or 0 to go back):");
 
         let user_choice = ask_input_user();
 
-
-        if let Some((server_type, server_id)) = servers_with_types.get(user_choice - 1) {
-
-            match *server_type{
+        if let Some((server_type, server_id)) = server_options.get(user_choice - 1) {
+            match *server_type {
                 ServerType::Communication => ask_comm_server(client_id, *server_id, controller),
-
-                ServerType::Text => {/*Request text*/},  // Placeholder for text server action        TODO
-                ServerType::Media => {/*Request media*/}, // Placeholder for media server action        TODO
-                _=> println!("Cannot send request to undefined server!")
+                ServerType::Text => request_text_from_server(client_id, &server_options, controller),
+                ServerType::Media => request_media_from_server(client_id, &server_options, controller),
+                ServerType::Undefined => { // Only allow AskType for undefined servers
+                    println!("Server type is undefined.");
+                    if let Err(e) = controller.ask_server_type_with_client_id(client_id, *server_id) {
+                        eprintln!("Error requesting server type: {}", e);
+                    }
+                }
             }
-
-        } else if user_choice == 0 { // Go back option
+        } else if user_choice == 0 {
             return; // Go back to client selection
         } else {
             println!("Invalid server choice.");
-
         }
-
-
     }
-
-
-
 }
 
 fn choose_action_client(client_type: ClientType, client_id: NodeId, controller: &mut SimulationController) {
