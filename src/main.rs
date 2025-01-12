@@ -10,12 +10,11 @@ mod clients;
 pub mod ui_traits;
 mod connecting_websocket;
 
-use std::thread;
-use serde::{Deserialize, Serialize};
-use futures_util::{SinkExt, StreamExt};
 use crossbeam_channel;
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+use futures_util::{SinkExt, StreamExt};
+use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
+use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 
 #[tokio::main]  //HERE YOU ARE EXPLICITLY USING MULTITHREADED RUNTIME WITH TOKIO SO SURE THAT YOU ARE

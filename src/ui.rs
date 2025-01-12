@@ -273,7 +273,7 @@ fn request_text_from_server(client_id: NodeId, server_list: &Vec<(ServerType, No
     println!("\nChoose a server:");
     let user_choice = ask_input_user();
 
-    if let Some(&(_, server_id)) = server_list.get((user_choice - 1) as usize) {
+    if let Some(&(_, server_id)) = server_list.get((user_choice - 1)) {
         if let Some((client_sender, _)) = controller.command_senders_clients.get(&client_id) {
             if let Err(e) = client_sender.send(ClientCommand::RequestText(server_id)) {
                 eprintln!("Failed to send RequestText command: {:?}", e);
@@ -293,7 +293,7 @@ fn request_media_from_server(client_id: NodeId, server_list: &Vec<(ServerType, N
     println!("\nChoose a server:");
     let user_choice = ask_input_user();
 
-    if let Some(&(_, server_id)) = server_list.get((user_choice - 1) as usize) {
+    if let Some(&(_, server_id)) = server_list.get((user_choice - 1)) {
         if let Some((client_sender, _)) = controller.command_senders_clients.get(&client_id) {
             if let Err(e) = client_sender.send(ClientCommand::RequestMedia(server_id)) {
                 eprintln!("Failed to send RequestMedia command: {:?}", e);
@@ -305,7 +305,7 @@ fn request_media_from_server(client_id: NodeId, server_list: &Vec<(ServerType, N
 
 fn ask_comm_server(client_id_chose: NodeId, sever_id_chose: NodeId, controller: &mut SimulationController) {
     /*
-    println!("What you wanna ask to the communication server:");
+    println!("What you want to ask the communication server:");
     println!("1. Add a client into the list");
     println!("2. Ask for the list of all the registered clients");
     println!("3. Send message to a client");

@@ -253,7 +253,7 @@ impl NetworkInitializer {
                 .cloned()
                 .collect();
             // From those we choose randomly one Brand and we use it
-            if let Some(&chosen_brand) = min_usage_drone_brands.choose(&mut rand::thread_rng()) {
+            if let Some(&chosen_brand) = min_usage_drone_brands.choose(&mut thread_rng()) {
                 // Update usage count
                 if let Some(usage) = self.drone_brand_usage.get_mut(&chosen_brand) {
                     *usage += 1;
@@ -321,7 +321,7 @@ impl NetworkInitializer {
                 .cloned()
                 .collect();
             // From those we choose randomly one Brand and we use it
-            if let Some(&chosen_type) = min_usage_client_types.choose(&mut rand::thread_rng()) {
+            if let Some(&chosen_type) = min_usage_client_types.choose(&mut thread_rng()) {
                 // Update usage count
                 if let Some(usage) = self.client_type_usage.get_mut(&chosen_type) {
                     *usage += 1;
@@ -490,7 +490,7 @@ impl NetworkInitializer {
 
     ///CREATING NETWORK
     ///
-    /// not needed function, you do it inside of the create function.
+    /// not needed function, you do it inside the create function.
     fn connect_nodes(&self, controller: &mut SimulationController, topology: HashMap<NodeId, Vec<NodeId>>) {
         // Cloning to avoid problems in borrowing
         let cloned_topology = topology.clone();

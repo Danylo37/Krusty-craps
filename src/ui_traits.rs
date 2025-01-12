@@ -1,9 +1,6 @@
-use tokio::sync::mpsc;
-use std::future::Future;
-use tokio::sync::Mutex;
-use std::sync::Arc;
 use crossbeam_channel::Receiver;
-use crate::clients::client_chen::ClientChen;
+use std::future::Future;
+use tokio::sync::mpsc;
 
 pub async fn crossbeam_to_tokio_bridge<T: Send + 'static>(
     mut crossbeam_rx: Receiver<T>,
@@ -17,7 +14,7 @@ pub async fn crossbeam_to_tokio_bridge<T: Send + 'static>(
                     break;
                 }
             }
-            Err(RecvError) => {
+            Err(_RecvError) => {
                 eprintln!("Crossbeam channel disconnected");
                 break;
             }

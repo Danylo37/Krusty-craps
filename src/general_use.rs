@@ -6,7 +6,6 @@ use wg_2024::{
     network::NodeId,
     packet::Packet,
 };
-use crate::network_initializer::DroneBrand;
 
 pub type Message = String;
 pub type File = String;
@@ -144,7 +143,7 @@ pub enum ClientType {
     Web,
 }
 impl ClientType {
-    // Returns an iterator over all variants of DroneBrand
+    // Returns an iterator over all possible client types
     pub fn iter() -> impl Iterator<Item = ClientType> {
         [
             ClientType::Chat,
