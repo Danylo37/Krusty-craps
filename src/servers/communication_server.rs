@@ -144,8 +144,6 @@ impl Monitoring for CommunicationServer {
         }
     }
 }
-}
-}
 
 impl MainTrait for CommunicationServer{
     fn get_id(&self) -> NodeId{ self.id }
