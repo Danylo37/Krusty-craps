@@ -155,9 +155,9 @@ impl NetworkInitializer {
         //Connecting the network
         self.connect_nodes(&mut controller, topology);
 
-        // Start the user interface
+        /*// Start the user interface
         println!("Starting User Interface");
-        start_ui(controller);
+        start_ui(controller);*/
     }
 
     ///DRONES GENERATION
