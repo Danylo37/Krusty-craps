@@ -44,7 +44,7 @@ pub struct ChatClientDanylo {
     routes: HashMap<NodeId, Vec<NodeId>>,                   // Routes to the servers
 
     // Message queues
-    message_to_send: Option<MessageFragments>,              // Fragments of message to be sent
+    messages_to_send: HashMap<u64, MessageFragments>,       // Queue of messages to be sent for different sessions
     fragments_to_reassemble: HashMap<u64, Vec<Fragment>>,   // Queue of fragments to be reassembled for different sessions
 
     // Inbox
@@ -77,7 +77,7 @@ impl Client for ChatClientDanylo {
             flood_ids: Vec::new(),
             topology: HashMap::new(),
             routes: HashMap::new(),
-            message_to_send: None,
+            messages_to_send: HashMap::new(),
             fragments_to_reassemble: HashMap::new(),
             inbox: Vec::new(),
             response_received: false,
@@ -176,12 +176,12 @@ impl ChatClientDanylo {
     /// ###### Handles the acknowledgment (ACK) for a given session and fragment.
     /// Processes the acknowledgment for a specific fragment in a session.
     /// If there are more fragments to send, it sends the next fragment.
-    /// If all fragments are acknowledged, it removes the message from message_to_send.
+    /// If all fragments are acknowledged, it removes the message from queue.
     fn handle_ack(&mut self, fragment_index: u64, session_id: u64) {
         debug!("Handling ACK for session {} and fragment {}", session_id, fragment_index);
 
         // Retrieve the message fragments for the given session.
-        let message = self.message_to_send.as_mut().unwrap();
+        let message = self.messages_to_send.get_mut(&session_id).unwrap();
 
         // Check if there is a next fragment to send.
         if let Some(next_fragment) = message.get_fragment_packet(fragment_index as usize) {
@@ -192,8 +192,8 @@ impl ChatClientDanylo {
                 Err(err) => error!("Failed to send next fragment for session {}: {}", session_id, err),
             }
         } else {
-            // All fragments are acknowledged; remove the message from message_to_send.
-            self.message_to_send = None;
+            // All fragments are acknowledged; remove the message from queue.
+            self.messages_to_send.remove(&session_id);
             self.response_received = true;
             info!("All fragments acknowledged for session {}", session_id);
         }
@@ -224,8 +224,8 @@ impl ChatClientDanylo {
     /// Else, it starts the discovery process to find a new route.
     /// If the discovery fails, it logs an error and sets the external error.
     fn handle_error_in_routing(&mut self,fragment_index: u64, error_node: NodeId, session_id: u64) {
-        self.update_topology_and_routes(error_node);
-        if self.message_to_send.as_ref().unwrap().get_route().is_empty() {
+        self.update_topology_and_routes(error_node, &session_id);
+        if self.messages_to_send.get(&session_id).unwrap().get_route().is_empty() {
             if self.discovery().is_err() {
                 self.external_error = Some("Failed to find a new route after error in routing".to_string());
                 error!("Failed to find a new route after error in routing");
@@ -238,7 +238,7 @@ impl ChatClientDanylo {
     /// ###### Updates the network topology and routes based on the received NACK.
     /// Removes the node that caused the error from the topology and routes.
     /// Finds new routes for the servers that need them.
-    fn update_topology_and_routes(&mut self, error_node: NodeId) {
+    fn update_topology_and_routes(&mut self, error_node: NodeId, session_id: &u64) {
         // Remove the node that caused the error from the topology.
         for (_, neighbors) in self.topology.iter_mut() {
             neighbors.remove(&error_node);
@@ -270,7 +270,7 @@ impl ChatClientDanylo {
             }
         }
 
-        let message = self.message_to_send.as_mut().unwrap();
+        let message = self.messages_to_send.get_mut(session_id).unwrap();
         let prev_route = message.get_route();
 
         // Check if the previous route in message to send contains the error node and update the route if necessary.
@@ -290,10 +290,11 @@ impl ChatClientDanylo {
     }
 
     /// ###### Resends the fragment for the specified session.
+    /// Retrieves the message and resends the fragment with the specified index.
     fn resend_fragment(&mut self, fragment_index: u64, session_id: u64) {
         debug!("Resending fragment {} for session {}", fragment_index, session_id);
 
-        let message = self.message_to_send.as_ref().unwrap();
+        let message = self.messages_to_send.get(&session_id).unwrap();
         let packet = message.get_fragment_packet(fragment_index as usize).unwrap();
         match self.send_to_next_hop(packet) {
             Ok(_) => info!("Resent fragment {} for session {}", fragment_index, session_id),
@@ -673,7 +674,7 @@ impl ChatClientDanylo {
         // Create message (split the message into fragments) and send first fragment.
         let mut message = MessageFragments::new(session_id, hops);
         if message.create_message_of(data) {
-            self.message_to_send = Some(message.clone());
+            self.messages_to_send.insert(session_id, message.clone());
             self.send_to_next_hop(message.get_fragment_packet(0).unwrap())
         } else {
             Err("Failed to create message.".to_string())
