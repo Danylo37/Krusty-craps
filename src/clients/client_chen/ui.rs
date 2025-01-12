@@ -163,7 +163,7 @@ impl Monitoring for ClientChen{
                     biased;
                     // Handle periodic tasks
                     _ = interval.tick() => {
-                        eprintln!("Handling periodic tasks"); // Debug
+                        //eprintln!("Handling periodic tasks"); // Debug
                         // Handle fragments and send packet
                         self.handle_fragments_in_buffer_with_checking_status();
                         self.send_packets_in_buffer_with_checking_status(); // This can use crossbeam's send directly
@@ -198,7 +198,7 @@ impl Monitoring for ClientChen{
                         // Serialize the DisplayData to MessagePack binary
                         let json_string = serde_json::to_string(&display_data).unwrap();
                         if sender_to_gui.send(json_string).await.is_err() {
-                            eprintln!("Error sending data for Node {}", self.metadata.node_id);
+                            //eprintln!("Error sending data for Node {}", self.metadata.node_id);
                             break; // Exit loop if sending fails
                         }
 
@@ -209,7 +209,7 @@ impl Monitoring for ClientChen{
                         if let Some(packet) = packet_res {
                             self.handle_received_packet(packet);
                         } else {
-                            eprintln!("Error receiving packet");
+                            //eprintln!("Error receiving packet");
                         }
                     },
                     // Handle controller commands from the tokio mpsc channel
@@ -217,7 +217,7 @@ impl Monitoring for ClientChen{
                         if let Some(command) = command_res {
                             self.handle_controller_command(command);
                         } else {
-                            eprintln!("Error receiving controller command");
+                            //eprintln!("Error receiving controller command");
                         }
                     },
 
