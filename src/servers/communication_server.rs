@@ -2,7 +2,7 @@ use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::{
     collections::HashMap,
     fmt::Debug,
-    fmt::future::Future,
+    future::Future,
 };
 use tokio::{
     sync::mpsc,
@@ -126,10 +126,11 @@ impl Monitoring for CommunicationServer {
                     packet_res = packet_tokio_rx.recv() => {
                         if let Some(packet) = packet_res {
                             match packet.pack_type {
-                                PacketType::MsgFragment(fragment) => {
-                                    self.handle_fragment(fragment, packet.routing_header, packet.session_id);
-                                }
-                                _ => {}
+                                PacketType::Nack(nack) => self.handle_nack(nack, packet.session_id),
+                                PacketType::Ack(ack) => self.handle_ack(ack),
+                                PacketType::MsgFragment(fragment) => self.handle_fragment(fragment, packet.routing_header ,packet.session_id),
+                                PacketType::FloodRequest(flood_request) => self.handle_flood_request(flood_request, packet.session_id),
+                                PacketType::FloodResponse(flood_response) => self.handle_flood_response(flood_response),
                             }
                         } else {
                             eprintln!("Error receiving packet");
