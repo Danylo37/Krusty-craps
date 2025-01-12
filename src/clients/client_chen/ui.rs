@@ -163,7 +163,7 @@ impl Monitoring for ClientChen{
                     biased;
                     // Handle periodic tasks
                     _ = interval.tick() => {
-                        eprintln!("Handling periodic tasks"); // Debug
+                        //eprintln!("Handling periodic tasks"); // Debug
                         // Handle fragments and send packet
                         self.handle_fragments_in_buffer_with_checking_status();
                         self.send_packets_in_buffer_with_checking_status(); // This can use crossbeam's send directly
@@ -201,7 +201,6 @@ impl Monitoring for ClientChen{
                             //eprintln!("Error sending data for Node {}", self.metadata.node_id);
                             break; // Exit loop if sending fails
                         }
-
                     },
 
                     // Handle incoming packets from the tokio mpsc channel

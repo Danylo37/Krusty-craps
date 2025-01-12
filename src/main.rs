@@ -26,7 +26,6 @@ async fn main() {
     println!("Connecting to {}", url);
     let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
     println!("Connected to WebSocket");
-
     let (mut write, _) = ws_stream.split();
 
   
@@ -41,9 +40,9 @@ async fn main() {
     tokio::spawn(async move {
         loop {
             while let Some(msg) = rx.recv().await {
-                eprintln!("I'm running"); // Debug
+                //eprintln!("I'm running"); // Debug
                 if let Err(err) = write.send(Message::Text(msg)).await {
-                    eprintln!("Error writing to WebSocket: {:?}", err);
+                    //eprintln!("Error writing to WebSocket: {:?}", err);
                     break;
                 }
             }
@@ -56,6 +55,6 @@ async fn main() {
 
     // Keep the program running to simulate clients sending data
     tokio::signal::ctrl_c().await.expect("Failed to listen for ctrl+c");
-    println!("Client program terminated.");
+    //println!("Client program terminated.");
 }
 

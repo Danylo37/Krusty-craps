@@ -15,3 +15,7 @@ connected_drone_ids = [1]
 [[server]]
 id = 4
 connected_drone_ids = [2]
+
+[[client]]
+id = 5
+connected_drone_ids = [1,3]
