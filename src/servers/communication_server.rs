@@ -1,9 +1,10 @@
 use crossbeam_channel::{select_biased, Receiver, Sender};
-use std::collections::HashMap;
-use std::fmt::Debug;
-use std::future::Future;
-use tokio::sync::mpsc;
-use tokio::select;
+use std::{
+    collections::HashMap,
+    fmt::Debug,
+    sync::mpsc
+};
+
 //use eframe::egui::accesskit::NodeId as ui_node_id;
 use wg_2024::{
     network::{NodeId},
@@ -14,8 +15,7 @@ use wg_2024::{
 };
 use crate::general_use::{Message, Query, Response, ServerCommand, ServerEvent, ServerType};
 use crate::servers::media_server::MediaServer;
-use crate::servers::text_server::TextServer;
-use crate::ui_traits::{crossbeam_to_tokio_bridge, Monitoring};
+use crate::ui_traits::Monitoring;
 use super::server::CommunicationServer as CharTrait;
 use super::server::Server as MainTrait;
 
@@ -80,62 +80,49 @@ impl CommunicationServer{
 }
 
 impl Monitoring for CommunicationServer {
-    fn run_with_monitoring(
-        &mut self,
-        sender_to_gui: mpsc::Sender<String>,
-    ) -> impl Future<Output = ()> + Send {
-        async move {
-            // Create tokio mpsc channels for receiving controller commands and packets
-            let (controller_tokio_tx, mut controller_tokio_rx) = mpsc::channel(32);
-            let (packet_tokio_tx, mut packet_tokio_rx) = mpsc::channel(32);
+    async fn run_with_monitoring(&mut self, sender_to_gui: tokio::sync::mpsc::Sender<std::vec::Vec<u8>>) {
+        loop {
+            select_biased! {
+                recv(self.get_from_controller_command()) -> command_res => {
+                    if let Ok(command) = command_res {
+                        match command {
+                            ServerCommand::AddSender(id, sender) => {
+                                self.get_packet_send().insert(id, sender);
 
-            // Spawn the bridge function for controller commands
-            let controller_crossbeam_rx = self.from_controller_command.clone();
-            tokio::spawn(crossbeam_to_tokio_bridge(controller_crossbeam_rx, controller_tokio_tx));
-
-            // Spawn the bridge function for incoming packets
-            let packet_crossbeam_rx = self.packet_recv.clone();
-            tokio::spawn(crossbeam_to_tokio_bridge(packet_crossbeam_rx, packet_tokio_tx));
-
-            loop {
-                select! {
-                    // Handle controller commands from the tokio mpsc channel
-                    command_res = controller_tokio_rx.recv() => {
-                        if let Some(command) = command_res {
-                            match command {
-                                ServerCommand::AddSender(id, sender) => {
-                                    self.packet_send.insert(id, sender);
-                                }
-                                ServerCommand::RemoveSender(id) => {
-                                    self.packet_send.remove(&id);
-                                }
                             }
-                        } else {
-                            eprintln!("Error receiving controller command");
-                        }
-                    },
-                    // Handle incoming packets from the tokio mpsc channel
-                    packet_res = packet_tokio_rx.recv() => {
-                        if let Some(packet) = packet_res {
-                            match packet.pack_type {
-                                PacketType::MsgFragment(fragment) => {
-                                    self.handle_fragment(fragment, packet.routing_header, packet.session_id);
-                                }
-                                _ => {}
+                            ServerCommand::RemoveSender(id) => {
+                                self.get_packet_send().remove(&id);
                             }
-                        } else {
-                            eprintln!("Error receiving packet");
                         }
-                    },
-                    // Handle periodic tasks
-                    _ = tokio::time::sleep(std::time::Duration::from_millis(10)) => {
-                        // Perform periodic tasks here
-                    },
-                }
+                    }
+                },
+                recv(self.get_packet_recv()) -> packet_res => {
+                    if let Ok(packet) = packet_res {
+                        match packet.pack_type {
+                            PacketType::Nack(nack) => self.handle_nack(nack, packet.session_id),
+                            PacketType::Ack(ack) => self.handle_ack(ack),
+                            PacketType::MsgFragment(fragment) => self.handle_fragment(fragment, packet.routing_header ,packet.session_id),
+                            PacketType::FloodRequest(flood_request) => self.handle_flood_request(flood_request, packet.session_id),
+                            PacketType::FloodResponse(flood_response) => self.handle_flood_response(flood_response),
+                        }
+                    }
+                },
+                /*default(std::time::Duration::from_millis(10)) => {
+                    self.handle_fragments_in_buffer_with_checking_status();
+                    self.send_packets_in_buffer_with_checking_status();
+                    self.update_routing_checking_status();
+
+                    let json_string = serde_json::to_string(&self).unwrap();
+                    if sender_to_gui.send(json_string).is_err() {
+                        eprintln!("Error sending data for Node {}", self.id);
+                        break; // Exit loop if sending fails
+                    }
+                 },*/
             }
         }
     }
 }
+
 impl MainTrait for CommunicationServer{
     fn get_id(&self) -> NodeId{ self.id }
     fn get_server_type(&self) -> ServerType{ ServerType::Communication }
