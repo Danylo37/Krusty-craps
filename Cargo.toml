@@ -7,10 +7,9 @@ edition = "2021"
 name = "client"
 path = "src/main.rs"
 
-//This gives error idk why and why there is
-/*[[bin]]
+[[bin]]
 name = "server"
-path = "src/connecting_websocket.rs"*/
+path = "src/connecting_websocket.rs"
 
 [dependencies]
 wg_2024 = { git = "https://github.com/WGL-2024/WGL_repo_2024.git", features = ["serialize", "debug"] }
