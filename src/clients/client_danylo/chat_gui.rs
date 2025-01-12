@@ -218,18 +218,15 @@ impl <'a> ChatGUI<'a> {
         ui.heading("Choose a user");
         ui.separator();
 
-        let mut clients: Vec<NodeId> = self.client.clients.clone().into_iter().collect();
-        clients.sort();
-
-        if clients.is_empty() {
-            ui.label("No clients found.");
-        } else {
+        if let Some(clients) = self.client.clients.get(&self.current_server) {
             for client_id in clients.iter() {
                 if ui.button(format!("Client {}", client_id)).clicked() {
                     self.current_menu = Menu::SendMessageTo(*client_id);
                 }
             }
-        }
+        } else {
+            ui.label(format!("No clients found on server {}", self.current_server));
+        };
 
         ui.separator();
         if ui.button("Back").clicked() {
@@ -391,11 +388,15 @@ impl <'a> ChatGUI<'a> {
     }
 
     fn get_clients_string(&self) -> String {
-        let mut clients_string = "Client list:\n".to_string();
-        for client_id in self.client.clients.iter() {
-            clients_string.push_str(&format!("Client {}\n", client_id));
+        if let Some(clients) = self.client.clients.get(&self.current_server) {
+            let mut clients_string = "Received client list:\n".to_string();
+            for client_id in clients {
+                clients_string.push_str(&format!("Client {}\n", client_id));
+            }
+            clients_string
+        } else {
+            format!("No clients found on server {}", self.current_server)
         }
-        clients_string
     }
 
     fn discovery(&mut self, ui: &mut Ui) {
