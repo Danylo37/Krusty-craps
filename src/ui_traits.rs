@@ -25,8 +25,15 @@ pub async fn crossbeam_to_tokio_bridge<T: Send + 'static>(
     }
 }
 pub trait Monitoring {
-    fn run_with_monitoring(
+    //code in message pack
+  /*  fn run_with_monitoring(
         &mut self, // Use `&mut self` to allow mutation
         sender_to_gui: mpsc::Sender<Vec<u8>>,
+    ) -> impl Future<Output = ()> + Send;*/
+
+    //in json
+    fn run_with_monitoring(
+        &mut self, // Use `&mut self` to allow mutation
+        sender_to_gui: mpsc::Sender<String>,
     ) -> impl Future<Output = ()> + Send;
 }

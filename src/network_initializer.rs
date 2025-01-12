@@ -86,11 +86,13 @@ pub struct NetworkInitializer {
     server_channels: HashMap<NodeId, (Sender<Packet>, ServerType)>,
     drone_brand_usage: HashMap<DroneBrand, UsingTimes>,
     client_type_usage: HashMap<ClientType, UsingTimes>,
-    sender_to_gui: mpsc::Sender<Vec<u8>>
+    sender_to_gui: mpsc::Sender<String>
+    //sender_to_gui: mpsc::Sender<Vec<u8>> for message packet
+
 }
 
 impl NetworkInitializer {
-    pub fn new(sender_to_gui: mpsc::Sender<Vec<u8>>) -> Self {
+    pub fn new(sender_to_gui: mpsc::Sender<String>) -> Self {
         Self {
             drone_channels: HashMap::new(),
             client_channels: HashMap::new(),
@@ -355,7 +357,7 @@ impl NetworkInitializer {
 
     fn create_and_spawn_client_with_monitoring<T: TraitClient + Monitoring + Send + 'static>(
         &mut self,
-        sender_to_gui: mpsc::Sender<Vec<u8>>,
+        sender_to_gui: mpsc::Sender<String>,
         client_params: (
             ClientId,
             Sender<ClientEvent>,

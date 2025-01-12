@@ -91,20 +91,11 @@
 <!-- Message Display -->
 <div id="messages"></div>
 
-<!-- Include the MessagePack library -->
-<script src="msgpack.min.js"></script>
-
 <script>
-    // Debug: Verify the MessagePack library is loaded
-    console.log('MessagePack library:', window.MessagePack);
-
     const panelsContainer = document.getElementById("messages"); // Container for all panels
     const panels = {}; // Object to track panels by node_id
     const selectedNodes = new Set(); // Set to track selected nodes
     let isSelectionMode = false; // Flag to track selection mode
-
-    // Initialize MessagePack decoder
-    const msgpack = window.MessagePack;
 
     // Create a WebSocket connection to the Rust server
     const ws = new WebSocket('ws://127.0.0.1:8000');
@@ -177,24 +168,10 @@
     }
 
     // Handle WebSocket messages
-    // Handle WebSocket messages
     ws.onmessage = async (event) => {
         try {
-            // Debug: Log the received event data type
-            console.log('Received WebSocket message type:', typeof event.data);
-
-            // Ensure the data is a Blob before processing
-            if (!(event.data instanceof Blob)) {
-                throw new Error('WebSocket message is not a Blob.');
-            }
-
-            // Convert Blob to ArrayBuffer
-            const arrayBuffer = await event.data.arrayBuffer();
-            console.log('Converted ArrayBuffer:', arrayBuffer);
-
-            // Decode the MessagePack binary data
-            const uint8Array = new Uint8Array(arrayBuffer);
-            const data = msgpack.decode(uint8Array);
+            const text = await event.data;
+            const data = JSON.parse(text);
             console.log('Decoded data:', data);
 
             // Update the DOM with the decoded data
@@ -204,27 +181,29 @@
                 panel.className = "panel";
                 panel.dataset.nodeId = data.node_id;
                 panel.innerHTML = `
-                <div class="selection-square" onclick="toggleNodeSelection('${data.node_id}')"></div>
-                <h2>Node ${data.node_id}</h2>
-                <div class="session">Session ID: <span id="session-${data.node_id}"></span></div>
-                <div class="connected-nodes">Connected Nodes: <span id="connected-nodes-${data.node_id}"></span></div>
-                <div class="routing-table">Routing Table: <pre id="routing-table-${data.node_id}"></pre></div>
-                <div class="message-chat">Message Chat: <pre id="message-chat-${data.node_id}"></pre></div>
-            `;
+                    <div class="selection-square" onclick="toggleNodeSelection('${data.node_id}')"></div>
+                    <h2>Node ${data.node_id} (${data.node_type})</h2>
+                    <div class="session">Session ID: <span id="session-${data.node_id}">${data.session_id}</span></div>
+                    <div class="connected-nodes">Connected Nodes: <span id="connected-nodes-${data.node_id}">${Array.from(data.connected_node_ids).join(', ')}</span></div>
+                    <div class="registered-communication-servers">Registered Communication Servers: <pre id="registered-communication-servers-${data.node_id}">${JSON.stringify(data.registered_communication_servers, null, 2)}</pre></div>
+                    <div class="registered-content-servers">Registered Content Servers: <pre id="registered-content-servers-${data.node_id}">${JSON.stringify(data.registered_content_servers, null, 2)}</pre></div>
+                    <div class="routing-table">Routing Table: <pre id="routing-table-${data.node_id}">${JSON.stringify(data.routing_table, null, 2)}</pre></div>
+                    <div class="message-chat">Message Chat: <pre id="message-chat-${data.node_id}">${JSON.stringify(data.message_chat, null, 2)}</pre></div>
+                `;
                 panelsContainer.appendChild(panel);
                 panels[data.node_id] = panel;
                 console.log('Created new panel for node:', data.node_id);
+            } else {
+                // Update the existing panel with new data
+                document.getElementById(`session-${data.node_id}`).textContent = data.session_id;
+                document.getElementById(`connected-nodes-${data.node_id}`).textContent = Array.from(data.connected_node_ids).join(', ');
+                document.getElementById(`registered-communication-servers-${data.node_id}`).textContent = JSON.stringify(data.registered_communication_servers, null, 2);
+                document.getElementById(`registered-content-servers-${data.node_id}`).textContent = JSON.stringify(data.registered_content_servers, null, 2);
+                document.getElementById(`routing-table-${data.node_id}`).textContent = JSON.stringify(data.routing_table, null, 2);
+                document.getElementById(`message-chat-${data.node_id}`).textContent = JSON.stringify(data.message_chat, null, 2);
             }
-
-            // Update the displayed data for this node
-            document.getElementById(`session-${data.node_id}`).textContent = data.session_id;
-            document.getElementById(`connected-nodes-${data.node_id}`).textContent = Array.from(data.connected_node_ids).join(', ');
-            document.getElementById(`routing-table-${data.node_id}`).textContent = JSON.stringify(data.routing_table, null, 2);
-            document.getElementById(`message-chat-${data.node_id}`).textContent = JSON.stringify(data.message_chat, null, 2);
         } catch (e) {
             console.error('Error processing message:', e);
-
-            // Handle invalid or plain text messages
             const msgDiv = document.createElement("div");
             msgDiv.className = "message error";
             msgDiv.textContent = `Error decoding message: ${e.message}`;

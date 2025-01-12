@@ -82,7 +82,7 @@ impl CommunicationServer{
 impl Monitoring for CommunicationServer {
     fn run_with_monitoring(
         &mut self,
-        sender_to_gui: mpsc::Sender<Vec<u8>>,
+        sender_to_gui: mpsc::Sender<String>,
     ) -> impl Future<Output = ()> + Send {
         async move {
             // Create tokio mpsc channels for receiving controller commands and packets

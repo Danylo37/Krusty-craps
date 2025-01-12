@@ -30,7 +30,7 @@ async fn main() {
     let (mut write, _) = ws_stream.split();
 
     // Create an asynchronous channel for communication between clients and WebSocket writer task
-    let (tx, mut rx) = mpsc::channel::<Vec<u8>>(1000);
+    let (tx, mut rx) = mpsc::channel::<String>(1000);
 
     // Network initializer instance
     let mut my_net = network_initializer::NetworkInitializer::new(tx.clone());
@@ -40,7 +40,7 @@ async fn main() {
         loop {
             while let Some(msg) = rx.recv().await {
                 eprintln!("I'm running"); // Debug
-                if let Err(err) = write.send(Message::Binary(msg)).await {
+                if let Err(err) = write.send(Message::Text(msg)).await {
                     eprintln!("Error writing to WebSocket: {:?}", err);
                     break;
                 }

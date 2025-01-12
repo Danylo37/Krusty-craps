@@ -7,7 +7,7 @@ use tokio_tungstenite::tungstenite::Message;
 #[tokio::main]
 async fn main() {
     let ws_addr = "127.0.0.1:8000";
-    let (tx, _) = broadcast::channel::<Vec<u8>>(1000); // Broadcast channel for binary messages
+    let (tx, _) = broadcast::channel::<String>(1000); // Broadcast channel for messages
 
     let listener = TcpListener::bind(ws_addr).await.expect("Failed to bind WebSocket address");
 
@@ -23,20 +23,20 @@ async fn main() {
 
             let (mut write, mut read) = ws_stream.split();
 
-            // Task for broadcasting received binary messages
+            // Task for broadcasting received messages
             tokio::spawn(async move {
                 while let Ok(msg) = rx.recv().await {
-                    if let Err(e) = write.send(Message::Binary(msg)).await {
-                        eprintln!("Error sending binary message: {:?}", e);
+                    if let Err(e) = write.send(Message::Text(msg)).await {
+                        eprintln!("Error sending message: {:?}", e);
                         break;
                     }
                 }
             });
 
-            // Receive binary messages from this client
-            while let Some(Ok(Message::Binary(data))) = read.next().await {
-                println!("Received binary message of length: {}", data.len()); // Print length of binary data
-                let _ = tx.send(data); // Broadcast binary data to all clients
+            // Receive messages from this client
+            while let Some(Ok(Message::Text(data))) = read.next().await {
+                println!("Received message: {}", data); // Print the actual message content
+                let _ = tx.send(data); // Broadcast message to all clients
             }
 
             println!("WebSocket connection closed.");
