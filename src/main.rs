@@ -23,19 +23,21 @@ use tokio::sync::mpsc;
 async fn main() {
     let url = "ws://localhost:8000";
 
-    println!("Connecting to {}", url);
+    /*println!("Connecting to {}", url);
     let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
     println!("Connected to WebSocket");
 
     let (mut write, _) = ws_stream.split();
-
+    */
+  
     // Create an asynchronous channel for communication between clients and WebSocket writer task
     let (tx, mut rx) = mpsc::channel::<String>(1000);
 
     // Network initializer instance
     let mut my_net = network_initializer::NetworkInitializer::new(tx.clone());
     my_net.initialize_from_file("input.toml");
-    // Spawn a task for writing messages to the WebSocket
+    
+    /*// Spawn a task for writing messages to the WebSocket
     tokio::spawn(async move {
         loop {
             while let Some(msg) = rx.recv().await {
@@ -46,7 +48,7 @@ async fn main() {
                 }
             }
         }
-    });
+    });*/
 
 
 
