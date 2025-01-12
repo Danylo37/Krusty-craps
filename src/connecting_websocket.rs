@@ -35,7 +35,7 @@ async fn main() {
 
             // Receive messages from this client
             while let Some(Ok(Message::Text(data))) = read.next().await {
-                println!("Received message: {}", data); // Print the actual message content
+                //println!("Received message: {}", data); // Print the actual message content
                 let _ = tx.send(data); // Broadcast message to all clients
             }
 
