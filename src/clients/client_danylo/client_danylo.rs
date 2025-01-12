@@ -108,7 +108,7 @@ impl Client for ChatClientDanylo {
 
 impl ChatClientDanylo {
     /// ###### Handles incoming packets and delegates them to the appropriate handler based on the packet type.
-    fn handle_packet(&mut self, packet: Packet) {
+    pub(crate) fn handle_packet(&mut self, packet: Packet) {
         debug!("Handling packet: {:?}", packet);
 
         match packet.pack_type.clone() {
@@ -128,7 +128,7 @@ impl ChatClientDanylo {
     }
 
     /// ###### Handles incoming commands.
-    fn handle_command(&mut self, command: ClientCommand) {
+    pub(crate) fn handle_command(&mut self, command: ClientCommand) {
         debug!("Handling command: {:?}", command);
 
         match command {
