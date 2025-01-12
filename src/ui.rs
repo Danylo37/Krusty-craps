@@ -9,7 +9,7 @@ use crate::general_use::{ClientCommand, ClientType, ServerType};
 pub fn start_ui(mut controller: SimulationController) {
     loop {
 
-        ///Choosing base options
+        //Choosing base options
         println!(
             "Choose an option
 1. Use clients
@@ -178,7 +178,7 @@ fn choose_action_client(client_type: ClientType, client_id: NodeId, controller: 
 
     loop { // Loop for easier control flow
 
-        ///Choosing client function
+        //Choosing client function
         println!("\nChoose action for {} Client {}:", client_type, client_id);
 
         let servers = controller.get_list_servers();
@@ -273,7 +273,7 @@ fn request_text_from_server(client_id: NodeId, server_list: &Vec<(ServerType, No
     println!("\nChoose a server:");
     let user_choice = ask_input_user();
 
-    if let Some(&(_, server_id)) = server_list.get((user_choice - 1)) {
+    if let Some(&(_, server_id)) = server_list.get(user_choice - 1) {
         if let Some((client_sender, _)) = controller.command_senders_clients.get(&client_id) {
             if let Err(e) = client_sender.send(ClientCommand::RequestText(server_id)) {
                 eprintln!("Failed to send RequestText command: {:?}", e);
@@ -293,7 +293,7 @@ fn request_media_from_server(client_id: NodeId, server_list: &Vec<(ServerType, N
     println!("\nChoose a server:");
     let user_choice = ask_input_user();
 
-    if let Some(&(_, server_id)) = server_list.get((user_choice - 1)) {
+    if let Some(&(_, server_id)) = server_list.get(user_choice - 1) {
         if let Some((client_sender, _)) = controller.command_senders_clients.get(&client_id) {
             if let Err(e) = client_sender.send(ClientCommand::RequestMedia(server_id)) {
                 eprintln!("Failed to send RequestMedia command: {:?}", e);
