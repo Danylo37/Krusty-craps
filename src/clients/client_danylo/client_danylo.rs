@@ -218,7 +218,11 @@ impl ChatClientDanylo {
         }
     }
 
-    /// todo
+    /// ###### Handles an error in routing.
+    /// Updates the network topology and routes based on the error node.
+    /// If a new route is found, it resends the fragment for the specified session.
+    /// Else, it starts the discovery process to find a new route.
+    /// If the discovery fails, it logs an error and sets the external error.
     fn handle_error_in_routing(&mut self,fragment_index: u64, error_node: NodeId, session_id: u64) {
         self.update_topology_and_routes(error_node);
         if self.message_to_send.as_ref().unwrap().get_route().is_empty() {
@@ -285,7 +289,7 @@ impl ChatClientDanylo {
         }
     }
 
-    /// todo
+    /// ###### Resends the fragment for the specified session.
     fn resend_fragment(&mut self, fragment_index: u64, session_id: u64) {
         debug!("Resending fragment {} for session {}", fragment_index, session_id);
 
