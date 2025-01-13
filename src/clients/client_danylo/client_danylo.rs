@@ -195,7 +195,7 @@ impl ChatClientDanylo {
         let message = self.messages_to_send.get_mut(&session_id).unwrap();
 
         // Check if there is a next fragment to send.
-        if let Some(next_fragment) = message.get_fragment_packet(fragment_index as usize) {
+        if let Some(next_fragment) = message.get_fragment_packet((fragment_index + 1) as usize) {
             // Prepare and send the next fragment if available.
             message.increment_last_index();
             match self.send_to_next_hop(next_fragment) {
